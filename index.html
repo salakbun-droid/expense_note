@@ -967,14 +967,27 @@ function initGoogleSignIn() {
     google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: handleCredentialResponse,
-      auto_select: true,
+      // Safari (and any other browser enforcing Intelligent Tracking
+      // Prevention) blocks the third-party cookie GIS's classic One Tap
+      // iframe relies on — without this flag that dead-ends as a raw
+      // "400. That's an error." page from accounts.google.com instead of
+      // failing gracefully. itp_support switches One Tap to an
+      // ITP-compatible flow. Dropped auto_select too: forcing an immediate
+      // credential response through that same blocked mechanism was
+      // needless extra risk for a minor convenience.
+      itp_support: true,
     });
     gisInitialized = true;
   }
   const el = document.getElementById('gsiButton');
   el.innerHTML = '';
   google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
-  google.accounts.id.prompt(); // try silent one-tap sign-in if the browser already has a session
+  try {
+    // Silent one-tap sign-in if the browser already has a session — wrapped
+    // because a prompt() failure here must never block the actual sign-in
+    // button rendered just above from working.
+    google.accounts.id.prompt();
+  } catch (e) { /* the button above still works even if One Tap itself can't run */ }
 }
 
 function decodeJwtPayload(token) {
