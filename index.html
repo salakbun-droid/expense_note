@@ -490,14 +490,27 @@ body {
 .modal-actions { display: flex; gap: 8px; margin-top: 4px; }
 
 .cat-manage-list { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
+.cat-manage-list.reordering { overflow-y: hidden; } /* dragging shouldn't also try to scroll the list */
 .cat-manage-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 0;
   border-bottom: 1px solid var(--gridline);
+  background: var(--surface-card);
 }
 .cat-manage-row:last-child { border-bottom: none; }
+.cat-manage-row.dragging { position: relative; z-index: 5; opacity: 0.9; box-shadow: var(--shadow); border-radius: 8px; }
+.cat-drag-handle {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none; /* so a touch-drag moves the row, not the page */
+  user-select: none;
+}
+.cat-drag-handle:active { cursor: grabbing; }
+.cat-drag-handle .material-symbols-outlined { font-size: 20px; }
 .cat-manage-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-manage-row input[type="text"], .cat-manage-row select {
   padding: 6px 8px;
@@ -513,6 +526,8 @@ body {
   background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.9rem; padding: 4px 6px;
 }
 .cat-manage-actions button:hover { color: var(--text-primary); }
+.cat-manage-actions button:disabled { opacity: 0.3; cursor: default; }
+.cat-manage-actions button:disabled:hover { color: var(--text-muted); }
 .cat-add-inline { display: flex; gap: 6px; }
 .cat-add-inline input[type="text"] { flex: 1 1 auto; min-width: 0; }
 input[type="color"] {
@@ -1649,7 +1664,14 @@ let lastAddedDate = null;
 function openAddModal() {
   state.editingId = null;
   document.getElementById('addForm').reset();
-  document.getElementById('f-date').value = lastAddedDate || todayISO();
+  // A calendar day currently selected (dayFilter) wins over the last-added
+  // date — if you're looking at one day's transactions and hit add, you
+  // almost certainly want another entry on that same day.
+  let defaultDate = lastAddedDate || todayISO();
+  if (state.dayFilter != null && state.monthCursor) {
+    defaultDate = `${state.monthCursor.y}-${String(state.monthCursor.m).padStart(2, '0')}-${String(state.dayFilter).padStart(2, '0')}`;
+  }
+  document.getElementById('f-date').value = defaultDate;
   document.getElementById('txModalTitle').textContent = 'Add Transaction';
   document.getElementById('f-submit').textContent = 'เพิ่มรายการ';
   document.getElementById('txModal').classList.add('show');
@@ -1747,6 +1769,7 @@ function categoryManageRowHtml(c) {
   const color = groupColorFor(c.group);
   const icon = c.icon || DEFAULT_ICON_MAP[c.name] || 'sell';
   return `<div class="cat-manage-row" data-name="${escapeHtml(c.name)}">
+    <span class="cat-drag-handle" title="ลากเพื่อจัดลำดับ"><span class="material-symbols-outlined">drag_indicator</span></span>
     <span class="cat-manage-name"><span class="material-symbols-outlined cat-icon" style="color:${color}">${icon}</span>${escapeHtml(c.name)}</span>
     <div class="cat-manage-actions">
       <button data-act="edit" title="แก้ไข">✎</button>
@@ -1758,6 +1781,7 @@ function categoryManageRowHtml(c) {
 function bindCategoryManageActions() {
   document.querySelectorAll('#categoryManageList .cat-manage-row').forEach(row => {
     const name = row.dataset.name;
+    row.querySelector('.cat-drag-handle').addEventListener('pointerdown', (e) => startCategoryDrag(e, row));
     row.querySelector('[data-act="edit"]').addEventListener('click', () => enterCategoryEditMode(row, name));
     row.querySelector('[data-act="del"]').addEventListener('click', () => deleteCategoryUI(name));
   });
@@ -1808,6 +1832,69 @@ async function saveCategoryEdit(oldName, row) {
   } catch (err) {
     toast('แก้ไขไม่สำเร็จ: ' + err.message);
   }
+}
+
+// Pointer-based drag reorder (mouse + touch, no library) — grabbing the
+// handle physically re-parents the row in the DOM as it crosses each
+// sibling's midpoint, so the list always shows the live order being built.
+function startCategoryDrag(e, row) {
+  if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+  e.preventDefault();
+  const list = document.getElementById('categoryManageList');
+  const pointerId = e.pointerId;
+  const grabOffsetY = e.clientY - row.getBoundingClientRect().top;
+  const startOrder = state.categories.map(c => c.name);
+
+  row.setPointerCapture(pointerId);
+  row.classList.add('dragging');
+  list.classList.add('reordering');
+
+  function onMove(ev) {
+    row.style.transform = ''; // clear first so getBoundingClientRect below reads the true flow position
+    const rect = row.getBoundingClientRect();
+    const dy = ev.clientY - grabOffsetY - rect.top;
+    row.style.transform = `translateY(${dy}px)`;
+
+    const draggedCenter = rect.top + dy + rect.height / 2;
+    for (const sib of list.querySelectorAll('.cat-manage-row')) {
+      if (sib === row) continue;
+      const sr = sib.getBoundingClientRect();
+      const sibCenter = sr.top + sr.height / 2;
+      const sibIsAfter = !!(row.compareDocumentPosition(sib) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (sibIsAfter && draggedCenter > sibCenter) { list.insertBefore(row, sib.nextSibling); break; }
+      if (!sibIsAfter && draggedCenter < sibCenter) { list.insertBefore(row, sib); break; }
+    }
+  }
+
+  async function onUp() {
+    row.classList.remove('dragging');
+    list.classList.remove('reordering');
+    row.style.transform = '';
+    row.releasePointerCapture(pointerId);
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+
+    const finalOrder = Array.from(list.querySelectorAll('.cat-manage-row')).map(r => r.dataset.name);
+    if (finalOrder.join('|') === startOrder.join('|')) return; // nothing moved
+
+    const byName = new Map(state.categories.map(c => [c.name, c]));
+    const reordered = finalOrder.map(n => byName.get(n));
+    const prevOrder = state.categories;
+    state.categories = reordered; // optimistic — snap back on failure
+    try {
+      await api.post('reorderCategories', { order: finalOrder });
+      reordered.forEach((c, i) => { c.sortOrder = i + 1; });
+      persistCache();
+      renderCategorySelect();
+    } catch (err) {
+      state.categories = prevOrder;
+      renderCategoryManageList();
+      toast('เลื่อนลำดับไม่สำเร็จ: ' + err.message);
+    }
+  }
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
 }
 
 async function deleteCategoryUI(name) {
