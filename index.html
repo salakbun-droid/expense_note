@@ -626,14 +626,23 @@ function clearAllCaches() {
 // (surfaces as a 404 from the redirect it does internally). Code.gs's doGet
 // still accepts the same actions for manual/curl testing.
 const api = {
-  async post(action, payload) {
+  async post(action, payload, _retried) {
     if (!state.idToken) throw new Error('AUTH_REQUIRED');
     const res = await fetch(WEB_APP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, payload, idToken: state.idToken }),
     });
-    const json = await res.json();
+    let json;
+    try {
+      json = await res.json();
+    } catch (parseErr) {
+      // Apps Script's internal redirect-to-echo hop occasionally 404s for no
+      // fault of ours (returns an HTML error page instead of JSON) — retry
+      // once before giving up, since it's normally a one-off hiccup.
+      if (!_retried) return api.post(action, payload, true);
+      throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ลองใหม่อีกครั้ง');
+    }
     if (!json.ok) throw new Error(json.error || 'API error');
     return json.data;
   },
@@ -865,6 +874,7 @@ function renderStatRow() {
 
 // ---------- Month section (breakdown + list) ----------
 function shiftMonth(delta) {
+  if (!state.monthCursor) return; // data hasn't loaded yet — nothing to shift
   state.monthCursor = shiftedMonth(state.monthCursor.y, state.monthCursor.m, delta);
   renderStatRow();
   renderMonthSection();
