@@ -625,8 +625,21 @@ function fmtMoney(n) {
 
 function monthKeyOf(dateStr) { return dateStr.slice(0, 7); } // YYYY-MM
 
+// The cache is keyed per signed-in account (not a single shared key) — the
+// browser's localStorage has no idea which Google account is "currently"
+// signed in, so a shared key would show whoever loaded this browser last,
+// even briefly, before the real authenticated fetch overwrites it.
+function cacheKeyFor(email) { return CACHE_KEY + '::' + email; }
+
 function persistCache() {
-  localStorage.setItem(CACHE_KEY, JSON.stringify({ transactions: state.transactions, categories: state.categories }));
+  if (!state.userProfile) return;
+  localStorage.setItem(cacheKeyFor(state.userProfile.email), JSON.stringify({ transactions: state.transactions, categories: state.categories }));
+}
+
+function clearAllCaches() {
+  Object.keys(localStorage)
+    .filter(k => k.indexOf(CACHE_KEY) === 0)
+    .forEach(k => localStorage.removeItem(k));
 }
 
 // ---------- API ----------
@@ -708,6 +721,10 @@ function handleCredentialResponse(response) {
   state.idToken = response.credential;
   const payload = decodeJwtPayload(response.credential);
   state.userProfile = payload ? { email: payload.email, name: payload.name, picture: payload.picture } : null;
+  // Reset in-memory data so nothing from a previous account (e.g. switching
+  // accounts without an explicit sign-out) can render even for an instant.
+  state.transactions = [];
+  state.categories = [];
   showApp();
   bootstrap();
 }
@@ -737,7 +754,7 @@ function signOut() {
   state.userProfile = null;
   state.transactions = [];
   state.categories = [];
-  localStorage.removeItem(CACHE_KEY);
+  clearAllCaches();
   if (window.google && google.accounts && google.accounts.id) {
     google.accounts.id.disableAutoSelect();
   }
@@ -747,15 +764,18 @@ function signOut() {
 
 // ---------- Bootstrap ----------
 async function bootstrap() {
-  const cached = localStorage.getItem(CACHE_KEY);
-  if (cached) {
-    try {
-      applyData(JSON.parse(cached));
-    } catch (e) { /* ignore */ }
+  const email = state.userProfile && state.userProfile.email;
+  if (email) {
+    const cached = localStorage.getItem(cacheKeyFor(email));
+    if (cached) {
+      try {
+        applyData(JSON.parse(cached));
+      } catch (e) { /* ignore */ }
+    }
   }
   try {
     const data = await api.get('bootstrap');
-    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    if (email) localStorage.setItem(cacheKeyFor(email), JSON.stringify(data));
     applyData(data);
   } catch (err) {
     console.error(err);
