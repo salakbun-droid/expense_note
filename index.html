@@ -4,6 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Expense Tracker</title>
+<script>
+// Runs before the stylesheet paints anything, so a saved manual light/dark
+// choice applies immediately instead of flashing the system-default theme
+// for a frame first.
+(function () {
+  try {
+    var saved = localStorage.getItem('expenseApp.theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) { /* localStorage unavailable (e.g. private mode) — fall back to system theme */ }
+})();
+</script>
+<script>
+// mock.js (sample data + fake backend for local file:// previewing) is only
+// ever requested when actually needed — served over http/https, this never
+// fires, so mock.js doesn't need to be uploaded alongside index.html.
+if (location.protocol === 'file:') {
+  document.write('<script src="mock.js"><\/script>');
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -18,36 +37,71 @@
   --text-muted:     #898781;
   --gridline:       #e1e0d9;
   --border:         rgba(11,11,11,0.10);
-  --series-1:       #2a78d6; /* จำเป็น */
-  --series-2:       #eb6834; /* อื่นๆ */
+  /* Violet/mint accent pair — reuses the categorical palette's already-
+     validated "violet" (slot 7) and "aqua" (slot 3) hues, just promoted to
+     the app's two primary brand accents instead of chart-only colors. */
+  --series-1:       #4a3aa7; /* จำเป็น */
+  --series-2:       #1baf7a; /* อื่นๆ */
+  --accent-soft-1:  rgba(124,92,255,0.16);
+  --accent-soft-2:  rgba(255,140,190,0.14);
   --good:           #0ca30c;
   --critical:       #d03b3b;
   --warning:        #eda100;
   --shadow: 0 1px 2px rgba(11,11,11,0.04), 0 4px 16px rgba(11,11,11,0.04);
-  /* Fixed-order categorical palette for the category donut chart (max 8 slices). */
-  --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100;
-  --cat-5: #e87ba4; --cat-6: #008300; --cat-7: #4a3aa7; --cat-8: #e34948;
+  /* Fixed-order categorical palette for the category donut chart (max 8
+     slices) — muted/dusty tones rather than saturated primaries, validated
+     with scripts/validate_palette.js (dataviz skill) for CVD-safety, chroma
+     floor, lightness band, and contrast at every step below. */
+  --cat-1: #4e93d6; --cat-2: #e0966b; --cat-3: #2cbfa8; --cat-4: #d1ac3e;
+  --cat-5: #e091ae; --cat-6: #8fb86b; --cat-7: #9e86d9; --cat-8: #db7a7a;
 }
 
+/* System-default dark mode — skipped when the in-app toggle has stamped an
+   explicit data-theme, so a manual "light" choice can override a dark OS. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-page:   #0d0d0d;
-    --surface-card:   #1a1a19;
+    --surface-page:   #0a0e18;
+    --surface-card:   #141b2c;
     --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-    --gridline:       #2c2c2a;
-    --border:         rgba(255,255,255,0.10);
-    --series-1:       #3987e5;
-    --series-2:       #d95926;
+    --text-secondary: #a7b0c7;
+    --text-muted:     #7d879c;
+    --gridline:       #232c42;
+    --border:         rgba(255,255,255,0.08);
+    --series-1:       #9085e9;
+    --series-2:       #199e70;
+    --accent-soft-1:  rgba(144,133,233,0.14);
+    --accent-soft-2:  rgba(217,89,171,0.10);
     --good:           #0ca30c;
     --critical:       #e66767;
     --warning:        #c98500;
-    --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.3);
-    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
-    --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.45);
+    --cat-1: #3d82c9; --cat-2: #c97442; --cat-3: #1fa890; --cat-4: #b08a22;
+    --cat-5: #c96690; --cat-6: #6d9946; --cat-7: #8a72cc; --cat-8: #cc6868;
   }
+}
+
+/* Manual dark choice from the in-app toggle — wins over the OS setting
+   either way (light OS + this = dark, dark OS + this = still dark). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page:   #0a0e18;
+  --surface-card:   #141b2c;
+  --text-primary:   #ffffff;
+  --text-secondary: #a7b0c7;
+  --text-muted:     #7d879c;
+  --gridline:       #232c42;
+  --border:         rgba(255,255,255,0.08);
+  --series-1:       #9085e9;
+  --series-2:       #199e70;
+  --accent-soft-1:  rgba(144,133,233,0.14);
+  --accent-soft-2:  rgba(217,89,171,0.10);
+  --good:           #0ca30c;
+  --critical:       #e66767;
+  --warning:        #c98500;
+  --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.45);
+  --cat-1: #3d82c9; --cat-2: #c97442; --cat-3: #1fa890; --cat-4: #b08a22;
+  --cat-5: #c96690; --cat-6: #6d9946; --cat-7: #8a72cc; --cat-8: #cc6868;
 }
 
 * { box-sizing: border-box; }
@@ -55,7 +109,13 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", "Sarabun", sans-serif;
-  background: var(--surface-page);
+  /* Soft violet/pink glow fading into the page surface, echoing the
+     reference's blurred pastel background — decorative only. */
+  background:
+    radial-gradient(120% 55% at 12% -12%, var(--accent-soft-1), transparent 60%),
+    radial-gradient(100% 55% at 105% -6%, var(--accent-soft-2), transparent 55%),
+    var(--surface-page);
+  background-attachment: fixed;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
 }
@@ -64,6 +124,18 @@ body {
   max-width: 1120px;
   margin: 0 auto;
   padding: 24px 20px 60px;
+}
+
+.mock-banner {
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface-page));
+  color: var(--text-primary);
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 20px;
 }
 
 .topbar {
@@ -88,7 +160,10 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: var(--surface-page);
+  background:
+    radial-gradient(120% 55% at 12% -12%, var(--accent-soft-1), transparent 60%),
+    radial-gradient(100% 55% at 105% -6%, var(--accent-soft-2), transparent 55%),
+    var(--surface-page);
 }
 .sign-in-card {
   background: var(--surface-card);
@@ -133,7 +208,7 @@ body {
 .card {
   background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 18px;
   margin-bottom: 20px;
   box-shadow: var(--shadow);
@@ -147,8 +222,9 @@ body {
   color: var(--text-muted);
 }
 
-.chart-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+.chart-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .chart-header h3 { margin: 0; }
+.chart-header-toggles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .range-toggle { display: flex; gap: 4px; flex-shrink: 0; }
 .range-toggle button {
   border: 1px solid var(--gridline);
@@ -164,16 +240,11 @@ body {
 
 .chart-canvas-wrap { position: relative; height: 240px; }
 .chart-canvas-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+.chart-canvas-wrap--lg { height: 380px; }
+.chart-canvas-wrap--trend { height: 266px; } /* ~70% of --lg (380px) */
 
-.stat-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
 .stat-value { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat-value-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .delta-badge {
   display: inline-flex;
   align-items: center;
@@ -184,11 +255,10 @@ body {
   border-radius: 999px;
   margin-top: 8px;
 }
+.stat-value-row .delta-badge { margin-top: 0; }
 .delta-up { background: color-mix(in srgb, var(--critical) 15%, transparent); color: var(--critical); }
 .delta-down { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
 .delta-neutral { background: var(--border); color: var(--text-muted); }
-
-.total-card { display: flex; flex-direction: column; justify-content: center; }
 
 .dashboard-grid {
   display: grid;
@@ -246,6 +316,7 @@ body {
 .tx-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .tx-cat { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-meta { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tx-note { color: var(--series-1); }
 .tx-amount { flex: 0 0 auto; min-width: 88px; text-align: right; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tx-actions { flex: 0 0 auto; display: flex; gap: 4px; }
 .tx-actions button {
@@ -302,16 +373,76 @@ body {
   height: 10px;
   border-radius: 5px;
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-top: 14px;
   background: var(--gridline);
 }
 .group-bar span { height: 100%; }
-.group-legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--text-secondary); }
+.group-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
 
 .cat-row { margin-bottom: 10px; }
 .cat-row-top { display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 4px; }
 .cat-bar-track { height: 6px; border-radius: 3px; background: var(--gridline); overflow: hidden; }
 .cat-bar-fill { height: 100%; border-radius: 3px; }
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calendar-day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 4px 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  color: var(--text-primary);
+}
+.calendar-day.empty { border-color: transparent; }
+.calendar-day.today { border-color: var(--series-1); border-width: 2px; }
+.calendar-day.selected { box-shadow: 0 0 0 2px var(--series-2); }
+.calendar-day .cal-daynum { font-size: 0.68rem; color: var(--text-muted); font-weight: 600; }
+.calendar-day .cal-amount { font-size: 0.72rem; font-weight: 700; align-self: flex-end; font-variant-numeric: tabular-nums; }
+.calendar-day[data-day] { cursor: pointer; }
+
+.calendar-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  font-size: 0.82rem;
+  min-width: 160px;
+  max-width: 260px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.calendar-tooltip.show { opacity: 1; }
+.calendar-tooltip .ct-date { font-weight: 700; margin-bottom: 6px; }
+.calendar-tooltip .ct-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--gridline); }
+.calendar-tooltip .ct-row:first-of-type { border-top: none; }
+.calendar-tooltip .ct-cat { display: flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-tooltip .ct-amount { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.calendar-tooltip .ct-total { display: flex; justify-content: space-between; font-weight: 700; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--gridline); }
 
 .toast {
   position: fixed;
@@ -345,7 +476,7 @@ body {
 .modal-overlay.show { display: flex; }
 .modal {
   background: var(--surface-card);
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 22px;
   width: 100%;
   max-width: 420px;
@@ -395,6 +526,10 @@ body {
 
 <div class="app-shell" id="appShell" style="display:none;">
 
+  <div id="mockBanner" class="mock-banner" style="display:none;">
+    โหมดตัวอย่าง (Preview Mode) — ข้อมูลตัวอย่างเท่านั้น ไม่ได้เชื่อมต่อ Google Sheets จริง เปิดผ่าน URL ที่โฮสต์ไว้เพื่อใช้งานข้อมูลจริง
+  </div>
+
   <header class="topbar">
     <div>
       <h1>Expense Tracker</h1>
@@ -403,61 +538,85 @@ body {
     <div class="topbar-actions">
       <button id="addBtn" class="pill-btn">+ เพิ่มรายการ</button>
       <button id="categoryBtn" class="icon-btn" title="จัดการหมวดหมู่">🏷️</button>
+      <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
       <div class="user-info" id="userInfo" style="display:none;">
         <img class="user-avatar" id="userAvatar" alt="">
         <span class="user-name" id="userName"></span>
-        <button id="signOutBtn" class="icon-btn" title="ออกจากระบบ">🚪</button>
+        <button id="signOutBtn" class="icon-btn" title="ออกจากระบบ"><span class="material-symbols-outlined">power_settings_new</span></button>
       </div>
     </div>
   </header>
 
   <div class="dashboard-grid">
-    <div class="card">
-      <div class="month-picker">
-        <button id="prevMonth" class="icon-btn">‹</button>
-        <span id="monthLabel" class="month-label"></span>
-        <button id="nextMonth" class="icon-btn">›</button>
-      </div>
-      <div class="group-bar" id="groupBar"></div>
-      <div class="group-legend" id="groupLegend"></div>
-    </div>
-
-    <div class="card total-card">
-      <div class="stat-label">Total · <span id="statMonthLabel"></span></div>
-      <div class="stat-value" id="statTotal">–</div>
-      <div id="statDelta"></div>
-    </div>
-  </div>
-
-  <div class="dashboard-grid">
     <div class="col-main">
+      <div class="card">
+        <div class="month-picker js-month-picker">
+          <button class="icon-btn js-prev-month">‹</button>
+          <span class="month-label js-month-label"></span>
+          <button class="icon-btn js-next-month">›</button>
+        </div>
+        <div class="stat-value-row">
+          <div class="stat-value" id="statTotal">–</div>
+          <div id="statDelta"></div>
+          <div class="group-legend" id="groupLegend"></div>
+        </div>
+        <div class="group-bar" id="groupBar"></div>
+      </div>
+
       <div class="card">
         <h3>By Category</h3>
         <div id="categoryBreakdown"></div>
       </div>
 
       <div class="card">
-        <h3>Transactions This Month</h3>
+        <h3 id="monthListTitle">Transactions This Month</h3>
         <div id="monthList" class="tx-list"></div>
       </div>
     </div>
 
     <div class="col-side">
       <div class="card">
+        <h3>Daily Spending Calendar</h3>
+        <div class="month-picker js-month-picker">
+          <button class="icon-btn js-prev-month">‹</button>
+          <span class="month-label js-month-label"></span>
+          <button class="icon-btn js-next-month">›</button>
+        </div>
+        <div class="calendar-weekdays">
+          <span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>
+        </div>
+        <div id="dailyCalendar" class="calendar-grid"></div>
+      </div>
+
+      <div class="card">
         <div class="chart-header">
           <h3>Monthly Spending Trend</h3>
-          <div class="range-toggle" id="trendRangeToggle">
-            <button data-range="12" class="active">1Y</button>
-            <button data-range="24">2Y</button>
-            <button data-range="36">3Y</button>
-            <button data-range="ALL">All</button>
+          <div class="chart-header-toggles">
+            <div class="range-toggle" id="trendModeToggle">
+              <button data-mode="total" class="active">Total</button>
+              <button data-mode="group">Group</button>
+            </div>
+            <div class="range-toggle" id="trendRangeToggle">
+              <button data-range="12" class="active">1Y</button>
+              <button data-range="24">2Y</button>
+              <button data-range="36">3Y</button>
+              <button data-range="ALL">All</button>
+            </div>
           </div>
         </div>
-        <div class="chart-canvas-wrap"><canvas id="trendChart"></canvas></div>
+        <div class="chart-canvas-wrap chart-canvas-wrap--trend"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="card">
-        <h3>Spending by Category (Last 12 Months)</h3>
-        <div class="chart-canvas-wrap"><canvas id="rankChart"></canvas></div>
+        <div class="chart-header">
+          <h3>Spending by Category</h3>
+          <div class="range-toggle" id="rankRangeToggle">
+            <button data-range="1">1M</button>
+            <button data-range="3" class="active">3M</button>
+            <button data-range="6">6M</button>
+            <button data-range="12">12M</button>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap chart-canvas-wrap--lg"><canvas id="rankChart"></canvas></div>
       </div>
       <button id="exportBtn" class="ghost-btn">⬇ ส่งออกเป็น CSV</button>
     </div>
@@ -465,6 +624,7 @@ body {
 </div>
 
 <div id="toast" class="toast"></div>
+<div id="calendarTooltip" class="calendar-tooltip"></div>
 
 <!-- ADD / EDIT TRANSACTION MODAL -->
 <div id="txModal" class="modal-overlay">
@@ -521,6 +681,55 @@ body {
 <script>
 Chart.register(ChartDataLabels);
 
+// The category pie chart draws its icons onto a <canvas> using the Material
+// Symbols ligature font — if that font is still loading on first paint, the
+// canvas falls back to a system font and shows the raw ligature text (e.g.
+// "home") instead of the glyph. Re-render once the font is actually ready.
+document.fonts.load("400 13px 'Material Symbols Outlined'").catch(() => {});
+document.fonts.ready.then(() => { if (typeof rankChartInstance !== 'undefined' && rankChartInstance) renderCategoryChart(); });
+
+// ---------- Theme (light/dark) ----------
+// null/absent = follow the OS setting (the default); 'light'/'dark' = an
+// explicit in-app override, stamped as data-theme on <html> so it beats the
+// prefers-color-scheme media query either way. See the inline <script> at
+// the top of <head> for the pre-paint apply that avoids a flash on load.
+const THEME_KEY = 'expenseApp.theme';
+
+function effectiveTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function updateThemeToggleIcon() {
+  const icon = document.getElementById('themeToggleIcon');
+  if (!icon) return;
+  const active = effectiveTheme();
+  // Icon shows the mode a click switches TO (sun while dark is active, moon while light is active).
+  icon.textContent = active === 'dark' ? 'light_mode' : 'dark_mode';
+  document.getElementById('themeToggleBtn').title = active === 'dark' ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด';
+}
+
+function toggleTheme() {
+  const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  document.documentElement.setAttribute('data-theme', next);
+  updateThemeToggleIcon();
+  // Chart colors are read from CSS variables at render time, so a toggle
+  // needs a fresh render to pick up the new palette — not just the CSS cascade.
+  if (typeof trendChartInstance !== 'undefined' && trendChartInstance) renderTrendChart();
+  if (typeof rankChartInstance !== 'undefined' && rankChartInstance) renderCategoryChart();
+}
+
+// Keep the icon (and chart colors) in sync if the OS theme changes while the
+// app is open and the user hasn't picked an explicit override yet.
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (localStorage.getItem(THEME_KEY)) return;
+  updateThemeToggleIcon();
+  if (typeof trendChartInstance !== 'undefined' && trendChartInstance) renderTrendChart();
+  if (typeof rankChartInstance !== 'undefined' && rankChartInstance) renderCategoryChart();
+});
+
 // ---------- Config ----------
 // These are fixed for this deployment (not per-user secrets) — fill them in
 // once before hosting this file, so visitors never see or need to touch
@@ -531,6 +740,12 @@ const GOOGLE_CLIENT_ID = '379090037025-l0i3uhi4ble883dahu57q50hhgtj0csb.apps.goo
 
 const CACHE_KEY = 'expenseApp.cache';
 
+// Opening the file directly (double-click) can't do real Google Sign-In
+// anyway (GIS requires http/https), so fall back automatically to sample
+// data with no login — lets layout/CSS changes be checked instantly without
+// re-uploading to GitHub Pages each time.
+const MOCK_MODE = location.protocol === 'file:';
+
 // ---------- State ----------
 const state = {
   transactions: [], // {id,date,category,group,amount,note,createdAt}
@@ -538,6 +753,9 @@ const state = {
   editingId: null,
   monthCursor: null, // {y,m} currently browsed month
   trendRange: 12,    // months shown in the trend chart, or 'ALL'
+  trendMode: 'total', // 'total' (single bar) or 'group' (stacked by category)
+  rankRange: 3,      // months shown in the category breakdown chart (1/3/6/12)
+  dayFilter: null,   // day number to scope the transaction list to, or null for the whole month
   idToken: null,      // Google Identity Services ID token for the current session
   userProfile: null,  // {email, name, picture} decoded from idToken, for display only
 };
@@ -577,6 +795,7 @@ function iconForCategoryName(name) {
   return DEFAULT_ICON_MAP[name] || 'sell';
 }
 
+
 function renderIconPicker(containerId, selectedIcon, onSelect) {
   const el = document.getElementById(containerId);
   el.innerHTML = ICON_CHOICES.map(icon => `
@@ -603,6 +822,12 @@ function fmtMoney(n) {
 
 function monthKeyOf(dateStr) { return dateStr.slice(0, 7); } // YYYY-MM
 
+function fmtCompact(n) {
+  if (!n) return '';
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(Math.round(n));
+}
+
 // The cache is keyed per signed-in account (not a single shared key) — the
 // browser's localStorage has no idea which Google account is "currently"
 // signed in, so a shared key would show whoever loaded this browser last,
@@ -627,6 +852,7 @@ function clearAllCaches() {
 // still accepts the same actions for manual/curl testing.
 const api = {
   async post(action, payload, _retried) {
+    if (MOCK_MODE) return mockApi(action, payload);
     if (!state.idToken) throw new Error('AUTH_REQUIRED');
     const res = await fetch(WEB_APP_URL, {
       method: 'POST',
@@ -662,6 +888,13 @@ function toast(msg) {
 let gisInitialized = false;
 
 function initApp() {
+  if (MOCK_MODE) {
+    document.getElementById('mockBanner').style.display = 'block';
+    state.userProfile = { email: 'preview@example.com', name: 'Preview Mode', picture: '' };
+    showApp();
+    applyData(buildMockData());
+    return;
+  }
   if (WEB_APP_URL.indexOf('PASTE_YOUR') === 0 || GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR') === 0) {
     showSignInGate('ยังไม่ได้ตั้งค่า WEB_APP_URL / GOOGLE_CLIENT_ID ในไฟล์ index.html — แก้ค่าคงที่ด้านบนของ <script> ก่อนใช้งาน');
     return;
@@ -724,7 +957,9 @@ function showApp() {
 function renderUserInfo() {
   const el = document.getElementById('userInfo');
   if (!state.userProfile) { el.style.display = 'none'; return; }
-  document.getElementById('userAvatar').src = state.userProfile.picture || '';
+  const avatar = document.getElementById('userAvatar');
+  avatar.style.display = state.userProfile.picture ? '' : 'none';
+  avatar.src = state.userProfile.picture || '';
   document.getElementById('userName').textContent = state.userProfile.name || state.userProfile.email || '';
   el.style.display = 'flex';
 }
@@ -858,17 +1093,19 @@ function renderStatRow() {
   const prevDayLimit = Math.min(dayLimit, daysInMonth(prevYm.y, prevYm.m));
   const prev = monthStats(prevYm.y, prevYm.m, prevDayLimit);
 
-  document.getElementById('statMonthLabel').textContent = `${THAI_MONTHS_SHORT[m-1]} ${y}`;
   document.getElementById('statTotal').textContent = `${fmtMoney(cur.total)} บาท`;
 
   const deltaEl = document.getElementById('statDelta');
+  // Full context (which comparison, and the partial-month day range) moves
+  // to the badge's title tooltip — the visible label stays just the number,
+  // since the badge now sits inline next to the total instead of its own line.
   const compareNote = isCurrentRealMonth ? ` (วันที่ 1-${dayLimit})` : '';
   if (prev.total > 0) {
     const pct = ((cur.total - prev.total) / prev.total) * 100;
     const up = pct > 0;
-    deltaEl.innerHTML = `<span class="delta-badge ${up ? 'delta-up' : 'delta-down'}">${up ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}% เทียบช่วงเดียวกันเดือนก่อน${compareNote}</span>`;
+    deltaEl.innerHTML = `<span class="delta-badge ${up ? 'delta-up' : 'delta-down'}" title="เทียบช่วงเดียวกันเดือนก่อน${compareNote}">${up ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</span>`;
   } else {
-    deltaEl.innerHTML = `<span class="delta-badge delta-neutral">ไม่มีข้อมูลเดือนก่อนเทียบ</span>`;
+    deltaEl.innerHTML = `<span class="delta-badge delta-neutral">ไม่มีข้อมูลเทียบ</span>`;
   }
 }
 
@@ -876,16 +1113,108 @@ function renderStatRow() {
 function shiftMonth(delta) {
   if (!state.monthCursor) return; // data hasn't loaded yet — nothing to shift
   state.monthCursor = shiftedMonth(state.monthCursor.y, state.monthCursor.m, delta);
+  state.dayFilter = null; // switching months always falls back to the whole-month view
   renderStatRow();
   renderMonthSection();
 }
 
+function renderCalendar(y, m, monthTx) {
+  hideCalendarTooltip();
+  const el = document.getElementById('dailyCalendar');
+  const firstDow = new Date(y, m - 1, 1).getDay(); // 0 = Sun
+  const numDays = daysInMonth(y, m);
+
+  const byDayTx = {};
+  monthTx.forEach(t => {
+    const day = parseInt(t.date.slice(8, 10), 10);
+    (byDayTx[day] = byDayTx[day] || []).push(t);
+  });
+  const byDay = {};
+  Object.keys(byDayTx).forEach(day => {
+    byDay[day] = byDayTx[day].reduce((s, t) => s + t.amount, 0);
+  });
+  const maxAmount = Math.max(1, ...Object.values(byDay));
+
+  const now = new Date();
+  const isCurrentMonth = (y === now.getFullYear() && m === now.getMonth() + 1);
+
+  let html = '';
+  for (let i = 0; i < firstDow; i++) {
+    html += '<div class="calendar-day empty"></div>';
+  }
+  for (let day = 1; day <= numDays; day++) {
+    const amount = byDay[day] || 0;
+    const pct = amount ? Math.min(65, 12 + (amount / maxAmount) * 53) : 0;
+    const bg = amount ? `color-mix(in srgb, var(--series-1) ${pct.toFixed(0)}%, var(--surface-card))` : 'var(--surface-card)';
+    const isToday = isCurrentMonth && day === now.getDate();
+    const isSelected = state.dayFilter === day;
+    html += `<div class="calendar-day${isToday ? ' today' : ''}${amount ? ' has-tx' : ''}${isSelected ? ' selected' : ''}" style="background:${bg}" data-day="${day}">
+      <span class="cal-daynum">${day}</span>
+      ${amount ? `<span class="cal-amount">${fmtCompact(amount)}</span>` : ''}
+    </div>`;
+  }
+  el.innerHTML = html;
+
+  el.querySelectorAll('.calendar-day[data-day]').forEach(dayEl => {
+    const day = Number(dayEl.dataset.day);
+    if (dayEl.classList.contains('has-tx')) {
+      dayEl.addEventListener('mouseenter', () => showCalendarTooltip(dayEl, y, m, day, byDayTx[day]));
+      dayEl.addEventListener('mouseleave', hideCalendarTooltip);
+    }
+    dayEl.addEventListener('click', () => {
+      state.dayFilter = state.dayFilter === day ? null : day; // click again to go back to the whole month
+      renderMonthSection();
+    });
+  });
+}
+
+function calendarTooltipHtml(y, m, day, txList) {
+  const dateLabel = `${day} ${THAI_MONTHS_SHORT[m-1]} ${y}`;
+  const total = txList.reduce((s, t) => s + t.amount, 0);
+  const rows = [...txList]
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+    .map(t => {
+      const icon = iconForCategoryName(t.category);
+      const iconClass = t.group === 'จำเป็น' ? 'cat-icon-need' : 'cat-icon-other';
+      return `<div class="ct-row">
+        <span class="ct-cat"><span class="material-symbols-outlined cat-icon ${iconClass}">${icon}</span>${escapeHtml(t.category)}${t.note ? ' · <span class="tx-note">' + escapeHtml(t.note) + '</span>' : ''}</span>
+        <span class="ct-amount">${fmtMoney(t.amount)}</span>
+      </div>`;
+    }).join('');
+  return `<div class="ct-date">${dateLabel}</div>${rows}<div class="ct-total"><span>รวม</span><span>${fmtMoney(total)} บาท</span></div>`;
+}
+
+function showCalendarTooltip(dayEl, y, m, day, txList) {
+  const tip = document.getElementById('calendarTooltip');
+  tip.innerHTML = calendarTooltipHtml(y, m, day, txList);
+  tip.classList.add('show');
+  positionCalendarTooltip(dayEl.getBoundingClientRect());
+}
+
+function hideCalendarTooltip() {
+  document.getElementById('calendarTooltip').classList.remove('show');
+}
+
+function positionCalendarTooltip(cellRect) {
+  const tip = document.getElementById('calendarTooltip');
+  const margin = 8;
+  const tipRect = tip.getBoundingClientRect();
+  let left = cellRect.left + cellRect.width / 2 - tipRect.width / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+  let top = cellRect.top - tipRect.height - margin;
+  if (top < margin) top = cellRect.bottom + margin;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+
 function renderMonthSection() {
   const { y, m } = state.monthCursor;
-  document.getElementById('monthLabel').textContent = `${THAI_MONTHS_FULL[m-1]} ${y}`;
+  document.querySelectorAll('.js-month-label').forEach(el => { el.textContent = `${THAI_MONTHS_FULL[m-1]} ${y}`; });
   const { tx: monthTx, total, needTotal, otherTotal } = monthStats(y, m);
   const needPct = total ? (needTotal/total*100) : 0;
   const otherPct = total ? (otherTotal/total*100) : 0;
+
+  renderCalendar(y, m, monthTx);
 
   document.getElementById('groupBar').innerHTML = `
     <span style="width:${needPct}%; background:var(--series-1)"></span>
@@ -916,10 +1245,27 @@ function renderMonthSection() {
     </div>`;
   }).join('') : '<div class="empty-hint">ไม่มีรายการในเดือนนี้</div>';
 
-  // transaction list for the month
+  renderTxList(monthTx, y, m);
+}
+
+// Transaction list panel — scoped to a single day when state.dayFilter is
+// set (click a calendar date to set it, click that same date again to
+// clear it), otherwise the whole displayed month. Split out from
+// renderMonthSection so a day click doesn't need to recompute the
+// calendar, group bar, or category breakdown, which are always
+// whole-month regardless of this filter.
+function renderTxList(monthTx, y, m) {
   const listEl = document.getElementById('monthList');
-  const sorted = [...monthTx].sort((a,b) => (b.date + (b.createdAt||'')).localeCompare(a.date + (a.createdAt||'')));
-  listEl.innerHTML = sorted.length ? sorted.map(txRowHtml).join('') : '<div class="empty-hint">ไม่มีรายการในเดือนนี้</div>';
+  const titleEl = document.getElementById('monthListTitle');
+  const isDayView = state.dayFilter != null;
+  const tx = isDayView
+    ? monthTx.filter(t => parseInt(t.date.slice(8, 10), 10) === state.dayFilter)
+    : monthTx;
+
+  titleEl.textContent = isDayView ? `Transactions — ${state.dayFilter} ${THAI_MONTHS_SHORT[m-1]} ${y}` : 'Transactions This Month';
+
+  const sorted = [...tx].sort((a,b) => (b.date + (b.createdAt||'')).localeCompare(a.date + (a.createdAt||'')));
+  listEl.innerHTML = sorted.length ? sorted.map(txRowHtml).join('') : `<div class="empty-hint">ไม่มีรายการ${isDayView ? 'ในวันนี้' : 'ในเดือนนี้'}</div>`;
   bindTxRowActions(listEl);
 }
 
@@ -930,7 +1276,7 @@ function txRowHtml(t) {
     <div class="tx-row" data-id="${t.id}">
       <div class="tx-main">
         <span class="tx-cat"><span class="material-symbols-outlined cat-icon ${iconClass}">${icon}</span>${escapeHtml(t.category)}</span>
-        <span class="tx-meta">${t.date}${t.note ? ' · ' + escapeHtml(t.note) : ''}</span>
+        <span class="tx-meta">${t.date}${t.note ? ' · <span class="tx-note">' + escapeHtml(t.note) + '</span>' : ''}</span>
       </div>
       <div class="tx-amount">${fmtMoney(t.amount)}</div>
       <div class="tx-actions">
@@ -980,6 +1326,18 @@ function chartTheme() {
   };
 }
 
+// Stable color per category (keyed off its position in state.categories, not
+// its rank within whatever date range is currently shown) so a category
+// keeps the same color across the trend and breakdown charts even as the
+// user flips between periods. "อื่นๆ" (the folded-in residual bucket) always
+// gets a neutral muted tone instead of a real category's slot.
+function categoryColorFor(theme, name) {
+  if (name === 'อื่นๆ') return theme.textMuted;
+  const idx = state.categories.findIndex(c => c.name === name);
+  const slot = idx === -1 ? 0 : idx % 8;
+  return theme.styles.getPropertyValue(`--cat-${slot + 1}`).trim();
+}
+
 function earliestTransactionMonth() {
   if (!state.transactions.length) return null;
   const minDate = state.transactions.reduce((min, t) => (t.date < min ? t.date : min), state.transactions[0].date);
@@ -1013,26 +1371,66 @@ function renderOverview() {
 
 function renderTrendChart() {
   const months = monthKeysForRange(state.trendRange);
-  const totals = months.map(mk => state.transactions.filter(t => monthKeyOf(t.date) === mk.key).reduce((s,t) => s+t.amount, 0));
-  const labels = months.map(mk => `${THAI_MONTHS_SHORT[mk.m-1]} ${mk.y}`);
   const theme = chartTheme();
+  const labels = months.map(mk => `${THAI_MONTHS_SHORT[mk.m-1]} ${mk.y}`);
+  const isGroup = state.trendMode === 'group';
+
+  const monthKeySet = new Set(months.map(mk => mk.key));
+  const rangeTx = state.transactions.filter(t => monthKeySet.has(monthKeyOf(t.date)));
+  const perMonthByCat = months.map(mk => {
+    const byCat = {};
+    rangeTx.filter(t => monthKeyOf(t.date) === mk.key).forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + t.amount; });
+    return byCat;
+  });
+  const monthTotals = perMonthByCat.map(byCat => Object.values(byCat).reduce((s, v) => s + v, 0));
+
+  let datasets;
+  if (isGroup) {
+    // Same cap-at-7-plus-"Other" treatment as the breakdown chart — decided
+    // by total spend across the whole displayed range, so a category doesn't
+    // pop in/out of its own segment from one month to the next.
+    const totalsByCat = {};
+    rangeTx.forEach(t => { totalsByCat[t.category] = (totalsByCat[t.category] || 0) + t.amount; });
+    const rankedCats = Object.entries(totalsByCat).sort((a,b) => b[1]-a[1]).map(e => e[0]);
+    const MAX_STACK_CATS = 7;
+    const stackCats = rankedCats.slice(0, MAX_STACK_CATS);
+    const hasOther = rankedCats.length > MAX_STACK_CATS;
+
+    datasets = stackCats.map(cat => ({
+      label: cat,
+      data: perMonthByCat.map(byCat => byCat[cat] || 0),
+      backgroundColor: categoryColorFor(theme, cat),
+      stack: 'spending',
+      maxBarThickness: 32,
+    }));
+    if (hasOther) {
+      datasets.push({
+        label: 'อื่นๆ',
+        data: perMonthByCat.map(byCat => Object.entries(byCat).reduce((s, [cat, amt]) => s + (stackCats.includes(cat) ? 0 : amt), 0)),
+        backgroundColor: categoryColorFor(theme, 'อื่นๆ'),
+        stack: 'spending',
+        maxBarThickness: 32,
+      });
+    }
+  } else {
+    datasets = [{
+      label: 'รวม',
+      data: monthTotals,
+      backgroundColor: theme.seriesColor,
+      borderRadius: 4,
+      maxBarThickness: 32,
+    }];
+  }
 
   const trendCtx = document.getElementById('trendChart');
   if (trendChartInstance) trendChartInstance.destroy();
   trendChartInstance = new Chart(trendCtx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data: totals,
-        backgroundColor: theme.seriesColor,
-        borderRadius: 4,
-        maxBarThickness: 32,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       onClick: (evt, elements) => {
         if (!elements.length) return;
         const mk = months[elements[0].index];
@@ -1047,18 +1445,27 @@ function renderTrendChart() {
       plugins: {
         legend: { display: false },
         datalabels: { display: false },
-        tooltip: { ...theme.tooltip, callbacks: { label: (c) => fmtMoney(c.parsed.y) + ' บาท' } },
+        tooltip: isGroup ? {
+          ...theme.tooltip,
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ${fmtMoney(c.parsed.y)} บาท`,
+            footer: (items) => 'รวม: ' + fmtMoney(items.reduce((s, i) => s + i.parsed.y, 0)) + ' บาท',
+          },
+        } : {
+          ...theme.tooltip,
+          callbacks: { label: (c) => 'รวม: ' + fmtMoney(c.parsed.y) + ' บาท' },
+        },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: theme.textMuted, autoSkip: true, maxRotation: 0 } },
-        y: { grid: { color: theme.gridline }, ticks: { color: theme.textMuted, callback: (v) => fmtMoney(v) } },
+        x: { stacked: isGroup, grid: { display: false }, ticks: { color: theme.textMuted, autoSkip: true, maxRotation: 0 } },
+        y: { stacked: isGroup, grid: { color: theme.gridline }, ticks: { color: theme.textMuted, callback: (v) => fmtMoney(v) } },
       },
     },
   });
 }
 
 function renderCategoryChart() {
-  const months = monthKeysForRange(12);
+  const months = monthKeysForRange(state.rankRange);
   const theme = chartTheme();
   const monthKeySet = new Set(months.map(mk => mk.key));
   const byCat = {};
@@ -1075,9 +1482,56 @@ function renderCategoryChart() {
     const restTotal = catEntries.slice(MAX_SLICES - 1).reduce((s, e) => s + e[1], 0);
     catEntries = [...top, ['อื่นๆ', restTotal]];
   }
-  const catColors = [1,2,3,4,5,6,7,8].map(n => theme.styles.getPropertyValue(`--cat-${n}`).trim());
   const catTotal = catEntries.reduce((s, e) => s + e[1], 0);
   const pctOf = (v) => catTotal ? (v / catTotal * 100) : 0;
+
+  // The built-in datalabels plugin can only draw one label per slice with a
+  // single font, and applying the Material Symbols font to the percentage
+  // digits too made them render oddly (that font isn't meant for numerals).
+  // So draw the icon (Material Symbols, monotone) and the "61%" text (the
+  // app's normal font) as two separate fillText calls, side by side.
+  const iconPctLabelsPlugin = {
+    id: 'iconPctLabels',
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(0);
+      const ctx = chart.ctx;
+      const iconFont = "400 15px 'Material Symbols Outlined'";
+      const pctFont = "700 12px system-ui, sans-serif";
+      meta.data.forEach((arc, i) => {
+        const pct = pctOf(chart.data.datasets[0].data[i]);
+        if (pct < 5) return;
+        const icon = iconForCategoryName(chart.data.labels[i]);
+        const pctText = pct.toFixed(0) + '%';
+        const pos = arc.tooltipPosition();
+
+        ctx.save();
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.font = iconFont;
+        const iconWidth = ctx.measureText(icon).width;
+        ctx.font = pctFont;
+        const pctWidth = ctx.measureText(pctText).width;
+        const gap = 4;
+        let x = pos.x - (iconWidth + gap + pctWidth) / 2;
+        const y = pos.y;
+
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+
+        ctx.font = iconFont;
+        ctx.strokeText(icon, x, y);
+        ctx.fillText(icon, x, y);
+        x += iconWidth + gap;
+
+        ctx.font = pctFont;
+        ctx.strokeText(pctText, x, y);
+        ctx.fillText(pctText, x, y);
+        ctx.restore();
+      });
+    },
+  };
 
   const rankCtx = document.getElementById('rankChart');
   if (rankChartInstance) rankChartInstance.destroy();
@@ -1087,11 +1541,12 @@ function renderCategoryChart() {
       labels: catEntries.map(e => e[0]),
       datasets: [{
         data: catEntries.map(e => e[1]),
-        backgroundColor: catEntries.map((_, i) => catColors[i % catColors.length]),
+        backgroundColor: catEntries.map(([name]) => categoryColorFor(theme, name)),
         borderColor: theme.surfaceCard,
         borderWidth: 2,
       }],
     },
+    plugins: [iconPctLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1099,23 +1554,23 @@ function renderCategoryChart() {
       plugins: {
         legend: { position: 'bottom', labels: { color: theme.textMuted, boxWidth: 10, padding: 12 } },
         tooltip: { ...theme.tooltip, callbacks: { label: (c) => `${c.label}: ${fmtMoney(c.parsed)} บาท (${pctOf(c.parsed).toFixed(1)}%)` } },
-        datalabels: {
-          color: '#fff',
-          font: { weight: '700', size: 12 },
-          textStrokeColor: 'rgba(0,0,0,0.35)',
-          textStrokeWidth: 2,
-          formatter: (value) => { const pct = pctOf(value); return pct >= 5 ? pct.toFixed(0) + '%' : ''; },
-        },
+        datalabels: { display: false },
       },
     },
   });
 }
 
 // ---------- Add / Edit transaction modal ----------
+// Remembers the date of the last-added (not edited) transaction, so
+// backfilling several entries for the same past date doesn't require
+// re-picking that date every time — only reset by actually picking a
+// different date in the form itself.
+let lastAddedDate = null;
+
 function openAddModal() {
   state.editingId = null;
   document.getElementById('addForm').reset();
-  document.getElementById('f-date').value = todayISO();
+  document.getElementById('f-date').value = lastAddedDate || todayISO();
   document.getElementById('txModalTitle').textContent = 'Add Transaction';
   document.getElementById('f-submit').textContent = 'เพิ่มรายการ';
   document.getElementById('txModal').classList.add('show');
@@ -1162,6 +1617,7 @@ async function handleFormSubmit(e) {
     } else {
       const created = await api.post('add', payload);
       state.transactions.push(created);
+      lastAddedDate = date;
       toast('เพิ่มรายการแล้ว');
     }
     persistCache();
@@ -1335,13 +1791,19 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('addForm').addEventListener('submit', handleFormSubmit);
   document.getElementById('f-cancel').addEventListener('click', closeTxModal);
   document.getElementById('addBtn').addEventListener('click', openAddModal);
-  document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(-1));
-  document.getElementById('nextMonth').addEventListener('click', () => shiftMonth(1));
+  document.querySelectorAll('.js-prev-month').forEach(btn => btn.addEventListener('click', () => shiftMonth(-1)));
+  document.querySelectorAll('.js-next-month').forEach(btn => btn.addEventListener('click', () => shiftMonth(1)));
   document.getElementById('exportBtn').addEventListener('click', exportCsv);
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
+  document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+  updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
   document.getElementById('nc-add').addEventListener('click', addCategoryUI);
-  document.getElementById('signOutBtn').addEventListener('click', signOut);
+  document.getElementById('signOutBtn').addEventListener('click', () => {
+    if (!confirm('ต้องการออกจากระบบใช่ไหม?')) return;
+    if (MOCK_MODE) { location.reload(); return; }
+    signOut();
+  });
   document.querySelectorAll('#trendRangeToggle button').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#trendRangeToggle button').forEach(b => b.classList.remove('active'));
@@ -1349,6 +1811,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const range = btn.dataset.range;
       state.trendRange = range === 'ALL' ? 'ALL' : Number(range);
       renderTrendChart();
+    });
+  });
+  document.querySelectorAll('#trendModeToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trendModeToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.trendMode = btn.dataset.mode;
+      renderTrendChart();
+    });
+  });
+  document.querySelectorAll('#rankRangeToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#rankRangeToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.rankRange = Number(btn.dataset.range);
+      renderCategoryChart();
     });
   });
   initApp();
@@ -1367,6 +1845,8 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('focus', resizeCharts);
 window.addEventListener('resize', resizeCharts);
+window.addEventListener('scroll', hideCalendarTooltip, true);
+window.addEventListener('resize', hideCalendarTooltip);
 </script>
 </body>
 </html>
