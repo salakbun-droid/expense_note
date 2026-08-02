@@ -408,7 +408,6 @@ body {
         <span class="user-name" id="userName"></span>
         <button id="signOutBtn" class="icon-btn" title="ออกจากระบบ">🚪</button>
       </div>
-      <button id="settingsBtn" class="icon-btn" title="ตั้งค่า">⚙️</button>
     </div>
   </header>
 
@@ -519,39 +518,18 @@ body {
   </div>
 </div>
 
-<!-- SETTINGS MODAL -->
-<div id="settingsModal" class="modal-overlay">
-  <div class="modal">
-    <h3>Settings</h3>
-    <div class="form-row">
-      <label>URL ของ Web App (Google Apps Script)</label>
-      <input type="text" id="s-weburl" placeholder="https://script.google.com/macros/s/.../exec">
-    </div>
-    <div class="form-row">
-      <label>Google OAuth Client ID</label>
-      <input type="text" id="s-clientid" placeholder="xxxxxxxxxx.apps.googleusercontent.com">
-    </div>
-    <div class="modal-actions">
-      <button id="s-save" class="primary-btn">บันทึก</button>
-      <button id="s-close" class="ghost-btn">ปิด</button>
-    </div>
-  </div>
-</div>
-
 <script>
 Chart.register(ChartDataLabels);
 
 // ---------- Config ----------
-const CONFIG_KEY = 'expenseApp.config';
+// These are fixed for this deployment (not per-user secrets) — fill them in
+// once before hosting this file, so visitors never see or need to touch
+// them. Who can actually sign in and use the app is controlled separately,
+// via the AllowedUsers sheet in Code.gs — not by hiding these values.
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDwhyTs_9yTrhu8S9pE8z5iMkyLkymz80ePHwScf9LyntWowtZHTurVmw1ZskLzPxRQQ/exec';
+const GOOGLE_CLIENT_ID = '379090037025-l0i3uhi4ble883dahu57q50hhgtj0csb.apps.googleusercontent.com';
+
 const CACHE_KEY = 'expenseApp.cache';
-
-function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}; }
-  catch (e) { return {}; }
-}
-function saveConfig(cfg) { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }
-
-let config = loadConfig();
 
 // ---------- State ----------
 const state = {
@@ -643,19 +621,14 @@ function clearAllCaches() {
 }
 
 // ---------- API ----------
+// All calls go through POST — an ID token is ~1000+ characters, and passing
+// it as a GET query param risks exceeding Apps Script's URL-length handling
+// (surfaces as a 404 from the redirect it does internally). Code.gs's doGet
+// still accepts the same actions for manual/curl testing.
 const api = {
-  async get(action) {
-    if (!config.webAppUrl) throw new Error('NO_URL');
-    if (!state.idToken) throw new Error('AUTH_REQUIRED');
-    const res = await fetch(`${config.webAppUrl}?action=${action}&idToken=${encodeURIComponent(state.idToken)}`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'API error');
-    return json.data;
-  },
   async post(action, payload) {
-    if (!config.webAppUrl) throw new Error('NO_URL');
     if (!state.idToken) throw new Error('AUTH_REQUIRED');
-    const res = await fetch(config.webAppUrl, {
+    const res = await fetch(WEB_APP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, payload, idToken: state.idToken }),
@@ -680,10 +653,8 @@ function toast(msg) {
 let gisInitialized = false;
 
 function initApp() {
-  if (!config.webAppUrl || !config.googleClientId) {
-    showSignInGate('กรุณาตั้งค่า Web App URL และ Google Client ID ก่อน (ปุ่ม ⚙️ มุมขวาบน)');
-    toast('ยังไม่ได้ตั้งค่า Web App URL / Google Client ID — กดปุ่ม ⚙️ เพื่อตั้งค่า');
-    openSettings();
+  if (WEB_APP_URL.indexOf('PASTE_YOUR') === 0 || GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR') === 0) {
+    showSignInGate('ยังไม่ได้ตั้งค่า WEB_APP_URL / GOOGLE_CLIENT_ID ในไฟล์ index.html — แก้ค่าคงที่ด้านบนของ <script> ก่อนใช้งาน');
     return;
   }
   showSignInGate('กำลังตรวจสอบการเข้าสู่ระบบ...');
@@ -697,7 +668,7 @@ function initGoogleSignIn() {
   }
   if (!gisInitialized) {
     google.accounts.id.initialize({
-      client_id: config.googleClientId,
+      client_id: GOOGLE_CLIENT_ID,
       callback: handleCredentialResponse,
       auto_select: true,
     });
@@ -749,16 +720,19 @@ function renderUserInfo() {
   el.style.display = 'flex';
 }
 
-function signOut() {
+function signOut(message) {
   state.idToken = null;
   state.userProfile = null;
   state.transactions = [];
   state.categories = [];
   clearAllCaches();
   if (window.google && google.accounts && google.accounts.id) {
+    // Prevents One Tap from silently re-selecting the same (possibly just-
+    // rejected) account on the next prompt() — the user has to explicitly
+    // click the sign-in button again, which avoids a forbidden-account loop.
     google.accounts.id.disableAutoSelect();
   }
-  showSignInGate();
+  showSignInGate(message);
   initGoogleSignIn();
 }
 
@@ -774,14 +748,15 @@ async function bootstrap() {
     }
   }
   try {
-    const data = await api.get('bootstrap');
+    const data = await api.post('bootstrap', {});
     if (email) localStorage.setItem(cacheKeyFor(email), JSON.stringify(data));
     applyData(data);
   } catch (err) {
     console.error(err);
-    if (String(err.message).indexOf('AUTH') === 0) {
-      toast('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-      signOut();
+    if (err.message === 'AUTH_FORBIDDEN') {
+      signOut('บัญชีนี้ยังไม่ได้รับอนุญาตให้ใช้แอปนี้ — ติดต่อเจ้าของแอปให้เพิ่มอีเมลนี้ในชีต AllowedUsers');
+    } else if (String(err.message).indexOf('AUTH') === 0) {
+      signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
@@ -1343,25 +1318,6 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-// ---------- Settings modal (connection URL) ----------
-function openSettings() {
-  document.getElementById('s-weburl').value = config.webAppUrl || '';
-  document.getElementById('s-clientid').value = config.googleClientId || '';
-  document.getElementById('settingsModal').classList.add('show');
-}
-function closeSettings() { document.getElementById('settingsModal').classList.remove('show'); }
-
-function saveSettings() {
-  const url = document.getElementById('s-weburl').value.trim();
-  const clientId = document.getElementById('s-clientid').value.trim();
-  const clientIdChanged = clientId !== (config.googleClientId || '');
-  config.webAppUrl = url;
-  config.googleClientId = clientId;
-  saveConfig(config);
-  closeSettings();
-  if (clientIdChanged) { gisInitialized = false; state.idToken = null; state.userProfile = null; }
-  initApp();
-}
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
@@ -1372,9 +1328,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('prevMonth').addEventListener('click', () => shiftMonth(-1));
   document.getElementById('nextMonth').addEventListener('click', () => shiftMonth(1));
   document.getElementById('exportBtn').addEventListener('click', exportCsv);
-  document.getElementById('settingsBtn').addEventListener('click', openSettings);
-  document.getElementById('s-close').addEventListener('click', closeSettings);
-  document.getElementById('s-save').addEventListener('click', saveSettings);
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
   document.getElementById('nc-add').addEventListener('click', addCategoryUI);
