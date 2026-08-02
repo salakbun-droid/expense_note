@@ -42,8 +42,11 @@ if (location.protocol === 'file:') {
      the app's two primary brand accents instead of chart-only colors. */
   --series-1:       #4a3aa7; /* จำเป็น */
   --series-2:       #1baf7a; /* อื่นๆ */
-  --accent-soft-1:  rgba(124,92,255,0.16);
-  --accent-soft-2:  rgba(255,140,190,0.14);
+  /* Purple-mix background glow — light + purple only (no cyan/pink), a
+     handful of purple-family blobs at varying hue/opacity for a mesh feel. */
+  --accent-soft-1:  rgba(124,92,255,0.24);
+  --accent-soft-2:  rgba(168,85,247,0.18);
+  --accent-soft-3:  rgba(91,33,182,0.14);
   --good:           #0ca30c;
   --critical:       #d03b3b;
   --warning:        #eda100;
@@ -70,8 +73,9 @@ if (location.protocol === 'file:') {
     --border:         rgba(255,255,255,0.08);
     --series-1:       #9085e9;
     --series-2:       #199e70;
-    --accent-soft-1:  rgba(144,133,233,0.14);
-    --accent-soft-2:  rgba(217,89,171,0.10);
+    --accent-soft-1:  rgba(144,133,233,0.22);
+    --accent-soft-2:  rgba(192,132,252,0.16);
+    --accent-soft-3:  rgba(76,29,149,0.28);
     --good:           #0ca30c;
     --critical:       #e66767;
     --warning:        #c98500;
@@ -94,8 +98,9 @@ if (location.protocol === 'file:') {
   --border:         rgba(255,255,255,0.08);
   --series-1:       #9085e9;
   --series-2:       #199e70;
-  --accent-soft-1:  rgba(144,133,233,0.14);
-  --accent-soft-2:  rgba(217,89,171,0.10);
+  --accent-soft-1:  rgba(144,133,233,0.22);
+  --accent-soft-2:  rgba(192,132,252,0.16);
+  --accent-soft-3:  rgba(76,29,149,0.28);
   --good:           #0ca30c;
   --critical:       #e66767;
   --warning:        #c98500;
@@ -109,11 +114,13 @@ if (location.protocol === 'file:') {
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", "Sarabun", sans-serif;
-  /* Soft violet/pink glow fading into the page surface, echoing the
-     reference's blurred pastel background — decorative only. */
+  /* Purple-mix mesh glow — three purple-family blobs blended into the page
+     surface (light+purple in light mode, dark+purple in dark mode), echoing
+     the reference's blurred gradient mesh but kept to two tones per theme. */
   background:
-    radial-gradient(120% 55% at 12% -12%, var(--accent-soft-1), transparent 60%),
-    radial-gradient(100% 55% at 105% -6%, var(--accent-soft-2), transparent 55%),
+    radial-gradient(85% 60% at 15% -5%, var(--accent-soft-1), transparent 62%),
+    radial-gradient(75% 55% at 100% 5%, var(--accent-soft-2), transparent 58%),
+    radial-gradient(70% 55% at 10% 105%, var(--accent-soft-3), transparent 58%),
     var(--surface-page);
   background-attachment: fixed;
   color: var(--text-primary);
@@ -161,8 +168,9 @@ body {
   justify-content: center;
   padding: 20px;
   background:
-    radial-gradient(120% 55% at 12% -12%, var(--accent-soft-1), transparent 60%),
-    radial-gradient(100% 55% at 105% -6%, var(--accent-soft-2), transparent 55%),
+    radial-gradient(85% 60% at 15% -5%, var(--accent-soft-1), transparent 62%),
+    radial-gradient(75% 55% at 100% 5%, var(--accent-soft-2), transparent 58%),
+    radial-gradient(70% 55% at 10% 105%, var(--accent-soft-3), transparent 58%),
     var(--surface-page);
 }
 .sign-in-card {
@@ -326,8 +334,6 @@ body {
 .empty-hint { color: var(--text-muted); font-size: 0.9rem; padding: 8px 0; }
 
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0; }
-.dot-need { background: var(--series-1); }
-.dot-other { background: var(--series-2); }
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
@@ -335,8 +341,6 @@ body {
   line-height: 1;
 }
 .cat-icon { font-size: 18px; margin-right: 6px; flex-shrink: 0; }
-.cat-icon-need { color: var(--series-1); }
-.cat-icon-other { color: var(--series-2); }
 
 .icon-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 4px; }
 .icon-choice {
@@ -511,6 +515,17 @@ body {
 .cat-manage-actions button:hover { color: var(--text-primary); }
 .cat-add-inline { display: flex; gap: 6px; }
 .cat-add-inline input[type="text"] { flex: 1 1 auto; min-width: 0; }
+input[type="color"] {
+  width: 40px;
+  height: 38px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--gridline);
+  background: var(--surface-page);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cat-edit-top input[type="color"] { height: auto; }
 </style>
 </head>
 <body>
@@ -664,16 +679,33 @@ body {
       <label>เพิ่มหมวดหมู่ใหม่</label>
       <div class="cat-add-inline">
         <input type="text" id="nc-name" placeholder="ชื่อหมวดหมู่">
-        <select id="nc-group">
-          <option value="จำเป็น">จำเป็น</option>
-          <option value="อื่นๆ">อื่นๆ</option>
-        </select>
+        <select id="nc-group"></select>
+        <button id="manage-groups-btn" type="button" class="icon-btn" title="จัดการกลุ่ม"><span class="material-symbols-outlined">settings</span></button>
       </div>
       <div class="icon-picker" id="nc-icon-picker"></div>
       <button id="nc-add" class="pill-btn small" style="margin-top:8px; width:100%;">+ เพิ่ม</button>
     </div>
     <div class="modal-actions">
       <button id="cat-close" class="ghost-btn">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- GROUP MANAGEMENT MODAL -->
+<div id="groupModal" class="modal-overlay">
+  <div class="modal">
+    <h3>Manage Groups</h3>
+    <div id="groupManageList" class="cat-manage-list"></div>
+    <div class="form-row">
+      <label>เพิ่มกลุ่มใหม่</label>
+      <div class="cat-add-inline">
+        <input type="text" id="ng-name" placeholder="ชื่อกลุ่ม">
+        <input type="color" id="ng-color" value="#4a3aa7" title="สีของกลุ่ม">
+      </div>
+      <button id="ng-add" class="pill-btn small" style="margin-top:8px; width:100%;">+ เพิ่ม</button>
+    </div>
+    <div class="modal-actions">
+      <button id="group-close" class="ghost-btn">ปิด</button>
     </div>
   </div>
 </div>
@@ -750,6 +782,7 @@ const MOCK_MODE = location.protocol === 'file:';
 const state = {
   transactions: [], // {id,date,category,group,amount,note,createdAt}
   categories: [],   // {name,group,sortOrder}
+  groups: [],       // {name,color,sortOrder}
   editingId: null,
   monthCursor: null, // {y,m} currently browsed month
   trendRange: 12,    // months shown in the trend chart, or 'ALL'
@@ -836,7 +869,7 @@ function cacheKeyFor(email) { return CACHE_KEY + '::' + email; }
 
 function persistCache() {
   if (!state.userProfile) return;
-  localStorage.setItem(cacheKeyFor(state.userProfile.email), JSON.stringify({ transactions: state.transactions, categories: state.categories }));
+  localStorage.setItem(cacheKeyFor(state.userProfile.email), JSON.stringify({ transactions: state.transactions, categories: state.categories, groups: state.groups }));
 }
 
 function clearAllCaches() {
@@ -886,6 +919,19 @@ function toast(msg) {
 
 // ---------- Google Sign-In ----------
 let gisInitialized = false;
+let gisPollAttempts = 0;
+
+// Google actively refuses to complete OAuth sign-in inside embedded "in-app"
+// browsers (LINE, Facebook, Instagram, etc.) — tapping through on a mobile
+// device just hangs or dead-ends with no visible error, which is exactly
+// the "ค้าง" (freezes) symptom this app has been getting reports of. Catch
+// it up front and tell the user to open the link in their real browser
+// instead of letting them stare at a spinner that will never resolve.
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  return /Line\//i.test(ua) || /FBAN|FBAV/i.test(ua) || /Instagram/i.test(ua) ||
+    /MicroMessenger/i.test(ua) || /Twitter/i.test(ua) || /; ?wv\)/i.test(ua);
+}
 
 function initApp() {
   if (MOCK_MODE) {
@@ -899,12 +945,21 @@ function initApp() {
     showSignInGate('ยังไม่ได้ตั้งค่า WEB_APP_URL / GOOGLE_CLIENT_ID ในไฟล์ index.html — แก้ค่าคงที่ด้านบนของ <script> ก่อนใช้งาน');
     return;
   }
+  if (isInAppBrowser()) {
+    showSignInGate('เข้าสู่ระบบด้วย Google ผ่านเบราว์เซอร์ในแอป (เช่น LINE, Facebook, Instagram) ไม่ได้ — Google บล็อกไว้ กรุณาแตะเมนู “•••” หรือ “เปิดใน Chrome/Safari” ที่มุมขวาบน แล้วเปิดลิงก์นี้ในเบราว์เซอร์ปกติแทน');
+    return;
+  }
   showSignInGate('กำลังตรวจสอบการเข้าสู่ระบบ...');
   initGoogleSignIn();
 }
 
 function initGoogleSignIn() {
   if (!window.google || !google.accounts || !google.accounts.id) {
+    gisPollAttempts++;
+    if (gisPollAttempts > 30) { // ~9s of polling at 300ms
+      showSignInGate('โหลดระบบเข้าสู่ระบบของ Google ไม่สำเร็จ อาจเป็นเพราะอินเทอร์เน็ตช้าหรือมีการบล็อก accounts.google.com — ลองรีเฟรชหน้านี้ใหม่อีกครั้ง');
+      return;
+    }
     setTimeout(initGoogleSignIn, 300);
     return;
   }
@@ -1010,6 +1065,7 @@ async function bootstrap() {
 function applyData(data) {
   state.transactions = data.transactions || [];
   state.categories = data.categories || [];
+  state.groups = data.groups || [];
   if (!state.monthCursor) {
     const d = new Date();
     state.monthCursor = { y: d.getFullYear(), m: d.getMonth() + 1 };
@@ -1051,7 +1107,17 @@ function renderCategorySelect() {
 
 function categoryGroup(name) {
   const c = state.categories.find(c => c.name === name);
-  return c ? c.group : 'อื่นๆ';
+  if (c) return c.group;
+  return state.groups[0] ? state.groups[0].name : '';
+}
+
+function groupColorFor(name) {
+  const g = state.groups.find(g => g.name === name);
+  return g ? g.color : 'var(--text-muted)';
+}
+
+function groupSelectOptionsHtml(selectedGroup) {
+  return state.groups.map(g => `<option value="${escapeHtml(g.name)}" ${g.name === selectedGroup ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('');
 }
 
 // ---------- Shared month math ----------
@@ -1062,9 +1128,9 @@ function monthStats(y, m, dayLimit) {
     tx = tx.filter(t => parseInt(t.date.slice(8, 10), 10) <= dayLimit);
   }
   const total = tx.reduce((s,t) => s + t.amount, 0);
-  const needTotal = tx.filter(t => t.group === 'จำเป็น').reduce((s,t) => s + t.amount, 0);
-  const otherTotal = tx.filter(t => t.group === 'อื่นๆ').reduce((s,t) => s + t.amount, 0);
-  return { tx, total, needTotal, otherTotal, count: tx.length };
+  const byGroup = {};
+  tx.forEach(t => { byGroup[t.group] = (byGroup[t.group] || 0) + t.amount; });
+  return { tx, total, byGroup, count: tx.length };
 }
 
 function daysInMonth(y, m) {
@@ -1175,9 +1241,9 @@ function calendarTooltipHtml(y, m, day, txList) {
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
     .map(t => {
       const icon = iconForCategoryName(t.category);
-      const iconClass = t.group === 'จำเป็น' ? 'cat-icon-need' : 'cat-icon-other';
+      const color = groupColorFor(t.group);
       return `<div class="ct-row">
-        <span class="ct-cat"><span class="material-symbols-outlined cat-icon ${iconClass}">${icon}</span>${escapeHtml(t.category)}${t.note ? ' · <span class="tx-note">' + escapeHtml(t.note) + '</span>' : ''}</span>
+        <span class="ct-cat"><span class="material-symbols-outlined cat-icon" style="color:${color}">${icon}</span>${escapeHtml(t.category)}${t.note ? ' · <span class="tx-note">' + escapeHtml(t.note) + '</span>' : ''}</span>
         <span class="ct-amount">${fmtMoney(t.amount)}</span>
       </div>`;
     }).join('');
@@ -1210,20 +1276,20 @@ function positionCalendarTooltip(cellRect) {
 function renderMonthSection() {
   const { y, m } = state.monthCursor;
   document.querySelectorAll('.js-month-label').forEach(el => { el.textContent = `${THAI_MONTHS_FULL[m-1]} ${y}`; });
-  const { tx: monthTx, total, needTotal, otherTotal } = monthStats(y, m);
-  const needPct = total ? (needTotal/total*100) : 0;
-  const otherPct = total ? (otherTotal/total*100) : 0;
+  const { tx: monthTx, total, byGroup } = monthStats(y, m);
 
   renderCalendar(y, m, monthTx);
 
-  document.getElementById('groupBar').innerHTML = `
-    <span style="width:${needPct}%; background:var(--series-1)"></span>
-    <span style="width:${otherPct}%; background:var(--series-2)"></span>
-  `;
-  document.getElementById('groupLegend').innerHTML = `
-    <span><span class="dot dot-need"></span>จำเป็น ${fmtMoney(needTotal)}</span>
-    <span><span class="dot dot-other"></span>อื่นๆ ${fmtMoney(otherTotal)}</span>
-  `;
+  // Always show every one of the user's defined groups (even at 0 this
+  // month) so the bar/legend don't reshuffle as spending moves between them.
+  const groupEntries = state.groups.map(g => ({ name: g.name, color: g.color, amount: byGroup[g.name] || 0 }));
+  document.getElementById('groupBar').innerHTML = groupEntries.map(g => {
+    const pct = total ? (g.amount / total * 100) : 0;
+    return `<span style="width:${pct}%; background:${g.color}"></span>`;
+  }).join('');
+  document.getElementById('groupLegend').innerHTML = groupEntries.map(g =>
+    `<span><span class="dot" style="background:${g.color}"></span>${escapeHtml(g.name)} ${fmtMoney(g.amount)}</span>`
+  ).join('');
 
   // category breakdown — group comes from each transaction's own stored
   // group, not a live category-table lookup, so renaming/deleting a
@@ -1236,7 +1302,7 @@ function renderMonthSection() {
   const catEntries = Object.entries(byCat).sort((a,b) => b[1].amount - a[1].amount);
   const maxCat = catEntries.length ? catEntries[0][1].amount : 1;
   document.getElementById('categoryBreakdown').innerHTML = catEntries.length ? catEntries.map(([cat, info]) => {
-    const color = info.group === 'จำเป็น' ? 'var(--series-1)' : 'var(--series-2)';
+    const color = groupColorFor(info.group);
     const pct = Math.max(2, (info.amount/maxCat*100));
     const icon = iconForCategoryName(cat);
     return `<div class="cat-row">
@@ -1270,12 +1336,12 @@ function renderTxList(monthTx, y, m) {
 }
 
 function txRowHtml(t) {
-  const iconClass = t.group === 'จำเป็น' ? 'cat-icon-need' : 'cat-icon-other';
+  const color = groupColorFor(t.group);
   const icon = iconForCategoryName(t.category);
   return `
     <div class="tx-row" data-id="${t.id}">
       <div class="tx-main">
-        <span class="tx-cat"><span class="material-symbols-outlined cat-icon ${iconClass}">${icon}</span>${escapeHtml(t.category)}</span>
+        <span class="tx-cat"><span class="material-symbols-outlined cat-icon" style="color:${color}">${icon}</span>${escapeHtml(t.category)}</span>
         <span class="tx-meta">${t.date}${t.note ? ' · <span class="tx-note">' + escapeHtml(t.note) + '</span>' : ''}</span>
       </div>
       <div class="tx-amount">${fmtMoney(t.amount)}</div>
@@ -1648,6 +1714,7 @@ let newCategoryIcon = 'sell';
 
 function openCategoryModal() {
   newCategoryIcon = 'sell';
+  document.getElementById('nc-group').innerHTML = groupSelectOptionsHtml(state.groups[0] ? state.groups[0].name : '');
   renderCategoryManageList();
   renderIconPicker('nc-icon-picker', newCategoryIcon, (icon) => { newCategoryIcon = icon; });
   document.getElementById('categoryModal').classList.add('show');
@@ -1664,10 +1731,10 @@ function renderCategoryManageList() {
 }
 
 function categoryManageRowHtml(c) {
-  const iconClass = c.group === 'จำเป็น' ? 'cat-icon-need' : 'cat-icon-other';
+  const color = groupColorFor(c.group);
   const icon = c.icon || DEFAULT_ICON_MAP[c.name] || 'sell';
   return `<div class="cat-manage-row" data-name="${escapeHtml(c.name)}">
-    <span class="cat-manage-name"><span class="material-symbols-outlined cat-icon ${iconClass}">${icon}</span>${escapeHtml(c.name)}</span>
+    <span class="cat-manage-name"><span class="material-symbols-outlined cat-icon" style="color:${color}">${icon}</span>${escapeHtml(c.name)}</span>
     <div class="cat-manage-actions">
       <button data-act="edit" title="แก้ไข">✎</button>
       <button data-act="del" title="ลบ">🗑</button>
@@ -1694,10 +1761,7 @@ function enterCategoryEditMode(row, name) {
     <div class="cat-edit-fields">
       <div class="cat-edit-top">
         <input type="text" class="cat-edit-name" value="${escapeHtml(c.name)}">
-        <select class="cat-edit-group">
-          <option value="จำเป็น" ${c.group === 'จำเป็น' ? 'selected' : ''}>จำเป็น</option>
-          <option value="อื่นๆ" ${c.group === 'อื่นๆ' ? 'selected' : ''}>อื่นๆ</option>
-        </select>
+        <select class="cat-edit-group">${groupSelectOptionsHtml(c.group)}</select>
       </div>
       <div class="icon-picker" id="cat-edit-icon-picker"></div>
     </div>
@@ -1768,6 +1832,118 @@ async function addCategoryUI() {
   }
 }
 
+// ---------- Group management modal ----------
+function openGroupModal() {
+  document.getElementById('ng-name').value = '';
+  document.getElementById('ng-color').value = '#4a3aa7';
+  renderGroupManageList();
+  document.getElementById('groupModal').classList.add('show');
+}
+function closeGroupModal() {
+  document.getElementById('groupModal').classList.remove('show');
+}
+
+function renderGroupManageList() {
+  const el = document.getElementById('groupManageList');
+  if (!state.groups.length) { el.innerHTML = '<div class="empty-hint">ยังไม่มีกลุ่ม</div>'; return; }
+  el.innerHTML = state.groups.map(groupManageRowHtml).join('');
+  bindGroupManageActions();
+}
+
+function groupManageRowHtml(g) {
+  return `<div class="cat-manage-row" data-name="${escapeHtml(g.name)}">
+    <span class="cat-manage-name"><span class="dot" style="background:${g.color}"></span>${escapeHtml(g.name)}</span>
+    <div class="cat-manage-actions">
+      <button data-act="edit" title="แก้ไข">✎</button>
+      <button data-act="del" title="ลบ">🗑</button>
+    </div>
+  </div>`;
+}
+
+function bindGroupManageActions() {
+  document.querySelectorAll('#groupManageList .cat-manage-row').forEach(row => {
+    const name = row.dataset.name;
+    row.querySelector('[data-act="edit"]').addEventListener('click', () => enterGroupEditMode(row, name));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => deleteGroupUI(name));
+  });
+}
+
+function enterGroupEditMode(row, name) {
+  const g = state.groups.find(g => g.name === name);
+  if (!g) return;
+  row.classList.add('editing');
+  row.innerHTML = `
+    <div class="cat-edit-fields">
+      <div class="cat-edit-top">
+        <input type="text" class="cat-edit-name" value="${escapeHtml(g.name)}">
+        <input type="color" class="cat-edit-color" value="${g.color}">
+      </div>
+    </div>
+    <div class="cat-manage-actions">
+      <button data-act="save" title="บันทึก">✓</button>
+      <button data-act="cancel" title="ยกเลิก">✕</button>
+    </div>
+  `;
+  row.querySelector('[data-act="save"]').addEventListener('click', () => saveGroupEdit(name, row));
+  row.querySelector('[data-act="cancel"]').addEventListener('click', renderGroupManageList);
+}
+
+async function saveGroupEdit(oldName, row) {
+  const newName = row.querySelector('.cat-edit-name').value.trim();
+  const newColor = row.querySelector('.cat-edit-color').value;
+  if (!newName) { toast('กรอกชื่อกลุ่ม'); return; }
+  if (newName !== oldName && state.groups.some(g => g.name === newName)) { toast('มีกลุ่มนี้อยู่แล้ว'); return; }
+  try {
+    await api.post('updateGroup', { oldName, name: newName, color: newColor });
+    const idx = state.groups.findIndex(g => g.name === oldName);
+    if (idx !== -1) state.groups[idx] = { ...state.groups[idx], name: newName, color: newColor };
+    if (newName !== oldName) {
+      // Cascades to match what the backend does to Categories/Transactions.
+      state.categories.forEach(c => { if (c.group === oldName) c.group = newName; });
+      state.transactions.forEach(t => { if (t.group === oldName) t.group = newName; });
+    }
+    persistCache();
+    toast('แก้ไขกลุ่มแล้ว');
+    renderGroupManageList();
+    renderCategorySelect();
+    renderAll();
+  } catch (err) {
+    toast('แก้ไขไม่สำเร็จ: ' + err.message);
+  }
+}
+
+async function deleteGroupUI(name) {
+  if (!confirm(`ลบกลุ่ม "${name}"?`)) return;
+  try {
+    await api.post('deleteGroup', { name });
+    state.groups = state.groups.filter(g => g.name !== name);
+    persistCache();
+    toast('ลบกลุ่มแล้ว');
+    renderGroupManageList();
+  } catch (err) {
+    toast('ลบไม่สำเร็จ: ' + err.message);
+  }
+}
+
+async function addGroupUI() {
+  const nameInput = document.getElementById('ng-name');
+  const name = nameInput.value.trim();
+  const color = document.getElementById('ng-color').value;
+  if (!name) { toast('กรอกชื่อกลุ่ม'); return; }
+  if (state.groups.some(g => g.name === name)) { toast('มีกลุ่มนี้อยู่แล้ว'); return; }
+  try {
+    const created = await api.post('addGroup', { name, color });
+    state.groups.push(created);
+    nameInput.value = '';
+    document.getElementById('ng-color').value = '#4a3aa7';
+    persistCache();
+    toast('เพิ่มกลุ่มแล้ว');
+    renderGroupManageList();
+  } catch (err) {
+    toast('เพิ่มไม่สำเร็จ: ' + err.message);
+  }
+}
+
 // ---------- CSV export ----------
 function exportCsv() {
   const header = 'date,category,group,amount,note\n';
@@ -1799,6 +1975,15 @@ document.addEventListener('DOMContentLoaded', () => {
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
   document.getElementById('nc-add').addEventListener('click', addCategoryUI);
+  document.getElementById('manage-groups-btn').addEventListener('click', () => {
+    closeCategoryModal();
+    openGroupModal();
+  });
+  document.getElementById('group-close').addEventListener('click', () => {
+    closeGroupModal();
+    openCategoryModal(); // drilled in from there — hand control back on close
+  });
+  document.getElementById('ng-add').addEventListener('click', addGroupUI);
   document.getElementById('signOutBtn').addEventListener('click', () => {
     if (!confirm('ต้องการออกจากระบบใช่ไหม?')) return;
     if (MOCK_MODE) { location.reload(); return; }
