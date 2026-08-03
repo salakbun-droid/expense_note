@@ -1001,11 +1001,27 @@ const api = {
   async post(action, payload, _retried) {
     if (MOCK_MODE) return mockApi(action, payload);
     if (!state.idToken) throw new Error('AUTH_REQUIRED');
-    const res = await fetch(WEB_APP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, payload, idToken: state.idToken }),
-    });
+    // fetch() has no default timeout — on a hanging connection it can sit
+    // for minutes with no feedback (this is what made the refresh spinner
+    // run "forever"). Bound each attempt so a stuck request fails fast
+    // instead of hanging indefinitely.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    let res;
+    try {
+      res = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, payload, idToken: state.idToken }),
+        signal: controller.signal,
+      });
+    } catch (fetchErr) {
+      throw new Error(fetchErr.name === 'AbortError'
+        ? 'เชื่อมต่อ Apps Script ไม่สำเร็จ (หมดเวลา) ลองใหม่อีกครั้ง'
+        : 'เชื่อมต่ออินเทอร์เน็ตไม่ได้ ตรวจสอบสัญญาณแล้วลองใหม่');
+    } finally {
+      clearTimeout(timeoutId);
+    }
     let json;
     try {
       json = await res.json();
@@ -1187,10 +1203,14 @@ function signOut(message) {
 }
 
 // ---------- Bootstrap ----------
-async function bootstrap(attempt) {
-  attempt = attempt || 1;
+// One attempt (api.post already retries once internally for read-only
+// actions like this one — stacking a second layer of retries on top of
+// that just made a hung connection spin for much longer with no extra
+// benefit). If it still fails, the user has the refresh button to retry
+// on demand instead of waiting through automatic attempts.
+async function bootstrap() {
   const email = state.userProfile && state.userProfile.email;
-  if (attempt === 1 && email) {
+  if (email) {
     const cached = localStorage.getItem(cacheKeyFor(email));
     if (cached) {
       try {
@@ -1214,17 +1234,8 @@ async function bootstrap(attempt) {
       trySilentReauth();
     } else if (String(err.message).indexOf('AUTH') === 0) {
       signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-    } else if (attempt < 3) {
-      // The very first load is the worst moment to hit Apps Script's
-      // redirect-relay flakiness (see api.post) — it's usually the largest
-      // request of the session (transactions+categories+groups together)
-      // and often the one that wakes the script from a cold start. Retry a
-      // couple more times with a short pause before bothering the user.
-      // Wrapped in a promise so callers awaiting bootstrap() see the
-      // outcome of the whole retry chain, not just this first attempt.
-      return new Promise(resolve => setTimeout(() => resolve(bootstrap(attempt + 1)), 1500));
     } else {
-      toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
+      toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message + ' — กดปุ่มรีเฟรชเพื่อลองใหม่');
     }
     return false;
   }
@@ -2047,14 +2058,15 @@ async function handleFormSubmit(e) {
     closeTxModal();
     renderAll();
   } catch (err) {
-    // A response that failed to parse after adding (not editing) a
-    // transaction is genuinely ambiguous — Code.gs may have already
-    // appended the row before the connection dropped. Rather than leaving
-    // the user to guess (and often re-click, creating a real duplicate),
-    // re-fetch and look for the row we just tried to add before reporting
-    // failure.
-    if (!state.editingId && String(err.message).indexOf('รายการอาจถูกบันทึกไปแล้ว') !== -1) {
-      const recovered = await verifyAddSucceeded(payload);
+    // A response that failed to parse is genuinely ambiguous — Code.gs may
+    // have already written the change before the connection dropped.
+    // Rather than leaving the user to guess (and often re-click, creating a
+    // real duplicate), re-fetch and check whether the write we just tried
+    // actually landed before reporting failure.
+    if (String(err.message).indexOf('รายการอาจถูกบันทึกไปแล้ว') !== -1) {
+      const recovered = state.editingId
+        ? await verifyUpdateSucceeded(state.editingId, payload)
+        : await verifyAddSucceeded(payload);
       if (recovered) {
         state.transactions = recovered;
         persistCache();
@@ -2094,6 +2106,35 @@ async function verifyAddSucceeded(payload) {
   }
 }
 
+// Same idea as verifyAddSucceeded, but for an edit: checks that the row we
+// were editing now actually reflects the new values on the server.
+async function verifyUpdateSucceeded(id, payload) {
+  try {
+    const fresh = await api.post('list', {});
+    const t = fresh.find(t => t.id === id);
+    const matches = t &&
+      t.date === payload.date &&
+      t.category === payload.category &&
+      Number(t.amount) === Number(payload.amount) &&
+      (t.note || '') === (payload.note || '');
+    return matches ? fresh : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Same idea again, but for a delete: the row being genuinely gone from the
+// server is what "succeeded despite an unreadable response" looks like here.
+async function verifyDeleteSucceeded(id) {
+  try {
+    const fresh = await api.post('list', {});
+    const stillThere = fresh.some(t => t.id === id);
+    return stillThere ? null : fresh;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function removeTransaction(id) {
   if (!confirm('ลบรายการนี้?')) return;
   try {
@@ -2103,6 +2144,16 @@ async function removeTransaction(id) {
     toast('ลบรายการแล้ว');
     renderAll();
   } catch (err) {
+    if (String(err.message).indexOf('รายการอาจถูกบันทึกไปแล้ว') !== -1) {
+      const recovered = await verifyDeleteSucceeded(id);
+      if (recovered) {
+        state.transactions = recovered;
+        persistCache();
+        toast('ลบสำเร็จ (ระบบตอบกลับช้า)');
+        renderAll();
+        return;
+      }
+    }
     toast('ลบไม่สำเร็จ: ' + err.message);
   }
 }
