@@ -198,6 +198,10 @@ body {
   border-radius: 8px;
 }
 .icon-btn:hover { background: var(--border); }
+.icon-btn:disabled { opacity: 0.5; cursor: default; }
+.icon-btn:disabled:hover { background: none; }
+#refreshIcon.spinning { animation: spin 0.8s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .pill-btn {
   border: none;
@@ -635,6 +639,7 @@ input[type="color"] {
       <button id="addBtn" class="pill-btn">+ เพิ่มรายการ</button>
       <button id="categoryBtn" class="icon-btn" title="จัดการหมวดหมู่">🏷️</button>
       <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
+      <button id="refreshBtn" class="icon-btn" title="ดึงข้อมูลใหม่จาก Google Sheets"><span class="material-symbols-outlined" id="refreshIcon">refresh</span></button>
       <div class="user-info" id="userInfo" style="display:none;">
         <img class="user-avatar" id="userAvatar" alt="">
         <span class="user-name" id="userName"></span>
@@ -1197,6 +1202,7 @@ async function bootstrap(attempt) {
     const data = await api.post('bootstrap', {});
     if (email) localStorage.setItem(cacheKeyFor(email), JSON.stringify(data));
     applyData(data);
+    return true;
   } catch (err) {
     console.error(err);
     if (err.message === 'AUTH_FORBIDDEN') {
@@ -1214,10 +1220,33 @@ async function bootstrap(attempt) {
       // request of the session (transactions+categories+groups together)
       // and often the one that wakes the script from a cold start. Retry a
       // couple more times with a short pause before bothering the user.
-      setTimeout(() => bootstrap(attempt + 1), 1500);
+      // Wrapped in a promise so callers awaiting bootstrap() see the
+      // outcome of the whole retry chain, not just this first attempt.
+      return new Promise(resolve => setTimeout(() => resolve(bootstrap(attempt + 1)), 1500));
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
+    return false;
+  }
+}
+
+// Manual "pull fresh data" — reuses the same in-memory idToken, so unlike
+// pressing F5 (which loses it, since it's never persisted to storage) this
+// doesn't force the user through sign-in again.
+async function refreshData() {
+  const btn = document.getElementById('refreshBtn');
+  const icon = document.getElementById('refreshIcon');
+  if (btn.disabled) return; // already refreshing
+  btn.disabled = true;
+  icon.classList.add('spinning');
+  try {
+    const ok = await bootstrap();
+    // On failure bootstrap() already reported it (toast, or signed out) —
+    // avoid stacking a false "success" message on top of that.
+    if (ok) toast('ดึงข้อมูลล่าสุดแล้ว');
+  } finally {
+    btn.disabled = false;
+    icon.classList.remove('spinning');
   }
 }
 
@@ -2419,6 +2448,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('exportBtn').addEventListener('click', exportCsv);
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+  document.getElementById('refreshBtn').addEventListener('click', refreshData);
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
   document.getElementById('nc-add').addEventListener('click', addCategoryUI);
