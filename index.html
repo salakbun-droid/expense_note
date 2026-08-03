@@ -25,10 +25,6 @@ if (location.protocol === 'file:') {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-<!-- Google Identity Services — kept only for the one-time "import old data
-     from Google Sheets" flow (see importFromGoogleSheets()). Day-to-day
-     sign-in now goes through Firebase Authentication below instead. -->
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- Firebase (compat build — namespaced firebase.* API, works with plain
      script tags like the rest of this file, no bundler/ES modules needed).
      Replaces Code.gs/Apps Script as the backend: Firestore for data,
@@ -123,6 +119,12 @@ if (location.protocol === 'file:') {
 
 body {
   margin: 0;
+  /* A safety net against any row of controls (like .topbar-actions on a
+     narrow phone) that doesn't fully wrap in time — without this, that row
+     pushes the whole page wider than the viewport and the entire app
+     becomes horizontally scrollable, which reads as "the layout is broken"
+     rather than just one row looking cramped. */
+  overflow-x: hidden;
   font-family: system-ui, -apple-system, "Segoe UI", "Sarabun", sans-serif;
   /* Purple-mix mesh glow — three purple-family blobs blended into the page
      surface (light+purple in light mode, dark+purple in dark mode), echoing
@@ -192,7 +194,7 @@ body {
 }
 .topbar h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.01em; }
 .topbar .subtitle { margin: 2px 0 0; color: var(--text-secondary); font-size: 0.85rem; }
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 10px; }
 
 .user-info { display: flex; align-items: center; gap: 6px; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--gridline); }
 .user-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--gridline); }
@@ -725,7 +727,6 @@ input[type="color"] {
       <button id="categoryBtn" class="icon-btn" title="จัดการหมวดหมู่">🏷️</button>
       <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
       <button id="refreshBtn" class="icon-btn" title="ดึงข้อมูลใหม่"><span class="material-symbols-outlined" id="refreshIcon">refresh</span></button>
-      <button id="importOldDataBtn" class="icon-btn" title="นำเข้าข้อมูลเก่าจาก Google Sheets (ครั้งเดียว) — ใช้ระหว่างย้ายระบบเท่านั้น"><span class="material-symbols-outlined">cloud_upload</span></button>
       <div class="user-info" id="userInfo" style="display:none;">
         <img class="user-avatar" id="userAvatar" alt="">
         <span class="user-name" id="userName"></span>
@@ -887,20 +888,6 @@ input[type="color"] {
   </div>
 </div>
 
-<div id="importModal" class="modal-overlay">
-  <div class="modal">
-    <h3>นำเข้าข้อมูลเก่าจาก Google Sheets</h3>
-    <p class="sign-in-message" style="margin-bottom:16px;">
-      กดปุ่มด้านล่างแล้วเลือกบัญชี Google <strong>เดียวกับที่เข้าสู่ระบบแอปอยู่ตอนนี้</strong>
-      (สำหรับดึงข้อมูลเก่าจากชีตเท่านั้น ไม่กระทบบัญชีที่ใช้งานอยู่)
-    </p>
-    <div id="importGsiButton" style="display:flex; justify-content:center; min-height:44px;"></div>
-    <div class="modal-actions">
-      <button id="import-close" class="ghost-btn">ยกเลิก</button>
-    </div>
-  </div>
-</div>
-
 <!-- MONTHLY SPENDING TREND — EXPANDED VIEW -->
 <div id="trendExpandModal" class="modal-overlay">
   <div class="modal modal--wide">
@@ -977,22 +964,12 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 });
 
 // ---------- Config ----------
-// These are fixed for this deployment (not per-user secrets) — fill them in
-// once before hosting this file, so visitors never see or need to touch
-// them. Who can actually sign in and use the app is controlled separately —
-// see the Firestore Security Rules (allowedUsers collection), not by hiding
-// these values (Firebase config is meant to be public, same trust model as
-// the old WEB_APP_URL/GOOGLE_CLIENT_ID below).
-//
-// WEB_APP_URL / GOOGLE_CLIENT_ID are no longer used for normal sign-in or
-// data access — Firestore + Firebase Authentication (below) replaced Apps
-// Script as the backend. They're kept only so importFromGoogleSheets() can
-// still reach the old spreadsheet data for the one-time migration; once
-// that's done for every account that needs it, Code.gs/Apps Script and
-// these two constants can be retired entirely.
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDwhyTs_9yTrhu8S9pE8z5iMkyLkymz80ePHwScf9LyntWowtZHTurVmw1ZskLzPxRQQ/exec';
-const GOOGLE_CLIENT_ID = '379090037025-l0i3uhi4ble883dahu57q50hhgtj0csb.apps.googleusercontent.com';
-
+// Fixed for this deployment (not per-user secrets) — Firebase config is
+// meant to be public, safe to embed client-side. Who can actually sign in
+// and use the app is controlled separately, via Firestore Security Rules
+// (the allowedUsers collection), not by hiding this. Code.gs/Apps Script
+// (the old backend, replaced by Firestore + Firebase Authentication below)
+// has been fully retired — every account finished migrating its data over.
 const firebaseConfig = {
   apiKey: "AIzaSyDIV6RDb2W_8hVKq89eGuPCgsPZQjYWd6w",
   authDomain: "cashflow-expense-tracker-6e765.firebaseapp.com",
@@ -1347,8 +1324,6 @@ let pendingSignInMessage = null;
 function initApp() {
   if (MOCK_MODE) {
     document.getElementById('mockBanner').style.display = 'block';
-    // The old-data import only makes sense against a real Firestore project.
-    document.getElementById('importOldDataBtn').style.display = 'none';
     state.userProfile = { email: 'preview@example.com', name: 'Preview Mode', picture: '', uid: 'preview' };
     showApp();
     applyData(buildMockData());
@@ -1476,122 +1451,6 @@ async function refreshData() {
   } finally {
     btn.disabled = false;
     icon.classList.remove('spinning');
-  }
-}
-
-// ---------- One-time import from the old Google Sheets backend ----------
-// Temporary migration aid: pulls this account's existing data out of the old
-// Apps Script/Google Sheets backend one last time and copies it into
-// Firestore. This is the only code left that still talks to Code.gs — safe
-// to delete entirely (this section + the importOldDataBtn button) once every
-// account that needs it has run it once.
-let importGsiInitialized = false;
-
-// google.accounts.id.prompt() (the silent "One Tap" flow) turned out to be
-// unreliable for actively opening a sign-in UI on demand — Google suppresses
-// it after a recent dismissal/sign-in on the same origin, or ITP blocks its
-// iframe outright, and either way it just silently no-ops with a "not
-// displayed/skipped" notification instead of doing anything visible (this
-// is exactly why the app's main sign-in button moved away from prompt() a
-// while back too). Render a real clickable Google button inside a small
-// modal instead — same reliable pattern as that main sign-in button.
-function importFromGoogleSheets() {
-  if (!state.userProfile || !state.userProfile.uid) { toast('ต้องเข้าสู่ระบบก่อน'); return; }
-  const already = state.transactions.length || state.categories.length;
-  if (already && !confirm('มีข้อมูลอยู่ใน Firestore แล้ว (' + state.transactions.length + ' รายการ) นำเข้าซ้ำจะเพิ่มข้อมูลซ้ำกัน ต้องการดำเนินการต่อหรือไม่?')) {
-    return;
-  }
-  if (!window.google || !google.accounts || !google.accounts.id) {
-    toast('ระบบเข้าสู่ระบบเดิมของ Google ยังโหลดไม่เสร็จ ลองใหม่อีกครั้งในอีกสักครู่');
-    return;
-  }
-  if (!importGsiInitialized) {
-    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: runImportFromGoogleSheets });
-    importGsiInitialized = true;
-  }
-  const el = document.getElementById('importGsiButton');
-  el.innerHTML = '';
-  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
-  document.getElementById('importModal').classList.add('show');
-}
-
-function closeImportModal() {
-  document.getElementById('importModal').classList.remove('show');
-}
-
-function decodeJwtPayload(token) {
-  try {
-    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const json = decodeURIComponent(atob(base64).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
-    return JSON.parse(json);
-  } catch (e) { return null; }
-}
-
-async function runImportFromGoogleSheets(response) {
-  // The GIS popup this triggers is a SEPARATE sign-in step from the Firebase
-  // session already active — nothing stops someone from picking a different
-  // Google account in it (e.g. the wrong saved account, or a spouse's, on a
-  // shared device). Without this check, that old Sheets data would land
-  // under the CURRENTLY signed-in Firebase account's Firestore path instead
-  // — one person's expenses silently mixed into another's. Since the old
-  // Sheets backend already scopes bootstrap by the token's own email
-  // (Code.gs's readTransactions/readCategories/readGroups filter by
-  // UserEmail), the two emails matching is what guarantees "my import only
-  // ever imports my own rows."
-  const credentialEmail = (decodeJwtPayload(response.credential) || {}).email;
-  const signedInEmail = state.userProfile && state.userProfile.email;
-  if (!credentialEmail || !signedInEmail || credentialEmail.toLowerCase() !== signedInEmail.toLowerCase()) {
-    toast('บัญชีที่เลือกไม่ตรงกับบัญชีที่เข้าสู่ระบบอยู่ (' + signedInEmail + ') กรุณาเลือกบัญชีเดียวกันตอนนำเข้าข้อมูล');
-    return;
-  }
-  closeImportModal();
-  toast('กำลังนำเข้าข้อมูล...');
-  try {
-    const res = await fetch(WEB_APP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'bootstrap', payload: {}, idToken: response.credential }),
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Import failed');
-    const data = json.data;
-
-    // Firestore batched writes cap at 500 ops each — a personal tracker used
-    // daily for a year+ (plus recurring fixed items every month) can easily
-    // clear that, so queue every write as {ref, data} first and commit in
-    // chunks of 500 across as many batches as needed, instead of assuming
-    // one batch is enough.
-    const ops = [];
-    (data.groups || []).forEach(g => {
-      ops.push([userCol('groups').doc(), { name: g.name, color: g.color, sortOrder: g.sortOrder }]);
-    });
-    (data.categories || []).forEach(c => {
-      ops.push([userCol('categories').doc(), { name: c.name, group: c.group, sortOrder: c.sortOrder, icon: c.icon || '' }]);
-    });
-    (data.transactions || []).forEach(t => {
-      ops.push([userCol('transactions').doc(), {
-        date: t.date, category: t.category, group: t.group, amount: Number(t.amount), note: t.note || '',
-        // Preserve the original creation time from Sheets instead of resetting
-        // everything to "now" — keeps existing sort order intact after import.
-        createdAt: t.createdAt ? new Date(t.createdAt) : firebase.firestore.FieldValue.serverTimestamp(),
-      }]);
-    });
-    if (ops.length === 0) { toast('ไม่พบข้อมูลเก่าให้นำเข้า'); return; }
-
-    const CHUNK_SIZE = 500;
-    const totalChunks = Math.ceil(ops.length / CHUNK_SIZE);
-    for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
-      const chunkNum = i / CHUNK_SIZE + 1;
-      toast('กำลังนำเข้าข้อมูล... (' + chunkNum + '/' + totalChunks + ')');
-      const batch = db.batch();
-      ops.slice(i, i + CHUNK_SIZE).forEach(([ref, docData]) => batch.set(ref, docData));
-      await batch.commit();
-    }
-    toast('นำเข้าข้อมูลสำเร็จ! (' + ops.length + ' รายการ) กำลังโหลดใหม่...');
-    await bootstrap();
-  } catch (err) {
-    console.error(err);
-    toast('นำเข้าข้อมูลไม่สำเร็จ: ' + err.message);
   }
 }
 
@@ -2815,8 +2674,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   document.getElementById('refreshBtn').addEventListener('click', refreshData);
-  document.getElementById('importOldDataBtn').addEventListener('click', importFromGoogleSheets);
-  document.getElementById('import-close').addEventListener('click', closeImportModal);
   document.getElementById('staleBannerRetry').addEventListener('click', refreshData);
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
