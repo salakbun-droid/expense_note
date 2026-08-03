@@ -196,7 +196,13 @@ body {
 .topbar .subtitle { margin: 2px 0 0; color: var(--text-secondary); font-size: 0.85rem; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 10px; }
 
-.user-info { display: flex; align-items: center; gap: 6px; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--gridline); }
+/* margin-left:auto pushes this to the right edge of its row — on a wide
+   screen the row never wraps so this has no visible effect, but once
+   .topbar-actions wraps onto multiple lines on a narrow phone, this group
+   lands alone on its own line and would otherwise hug the left edge same as
+   the row above it, leaving a large empty gap only on the right and making
+   the two stacked rows look lopsided instead of balanced. */
+.user-info { display: flex; align-items: center; gap: 6px; padding-left: 8px; margin-left: auto; border-left: 1px solid var(--gridline); }
 .user-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--gridline); }
 .user-name { font-size: 0.85rem; color: var(--text-secondary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -725,11 +731,11 @@ input[type="color"] {
     <div class="topbar-actions">
       <button id="addBtn" class="pill-btn">+ เพิ่มรายการ</button>
       <button id="categoryBtn" class="icon-btn" title="จัดการหมวดหมู่">🏷️</button>
-      <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
       <button id="refreshBtn" class="icon-btn" title="ดึงข้อมูลใหม่"><span class="material-symbols-outlined" id="refreshIcon">refresh</span></button>
       <div class="user-info" id="userInfo" style="display:none;">
         <img class="user-avatar" id="userAvatar" alt="">
         <span class="user-name" id="userName"></span>
+        <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
         <button id="signOutBtn" class="icon-btn" title="ออกจากระบบ"><span class="material-symbols-outlined">power_settings_new</span></button>
       </div>
     </div>
