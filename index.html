@@ -145,6 +145,33 @@ body {
   margin-top: 20px;
 }
 
+.stale-banner {
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface-page));
+  color: var(--text-primary);
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.stale-banner button {
+  font: inherit;
+  font-weight: 700;
+  color: var(--series-1);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
 .topbar {
   display: flex;
   align-items: flex-start;
@@ -650,6 +677,11 @@ input[type="color"] {
 
   <div id="loadingBar" class="loading-bar" style="display:none;"></div>
 
+  <div id="staleBanner" class="stale-banner" style="display:none;">
+    <span>แสดงข้อมูลที่บันทึกไว้ล่าสุดในเครื่อง — ดึงข้อมูลใหม่จาก Google Sheets ไม่สำเร็จ</span>
+    <button id="staleBannerRetry" type="button">ลองรีเฟรชอีกครั้ง</button>
+  </div>
+
   <div id="mockBanner" class="mock-banner" style="display:none;">
     โหมดตัวอย่าง (Preview Mode) — ข้อมูลตัวอย่างเท่านั้น ไม่ได้เชื่อมต่อ Google Sheets จริง เปิดผ่าน URL ที่โฮสต์ไว้เพื่อใช้งานข้อมูลจริง
   </div>
@@ -1021,8 +1053,20 @@ function clearAllCaches() {
 // it as a GET query param risks exceeding Apps Script's URL-length handling
 // (surfaces as a 404 from the redirect it does internally). Code.gs's doGet
 // still accepts the same actions for manual/curl testing.
+const READ_ONLY_ACTIONS = ['bootstrap', 'list', 'categories', 'groups'];
+// Apps Script Web Apps relay every response through an internal redirect
+// (script.google.com/exec -> script.googleusercontent.com/macros/echo) that
+// is, in practice, intermittently flaky on Google's own infrastructure —
+// observed hangs/404s on that hop with nothing wrong in our own code or
+// data. A few retries is safe for read-only actions (nothing gets written
+// twice) and meaningfully improves the odds one of them lands outside a bad
+// window; it's the only mitigation available for a failure mode outside our
+// control.
+const MAX_READ_ATTEMPTS = 3;
+
 const api = {
-  async post(action, payload, _retried) {
+  async post(action, payload, _attempt) {
+    const attempt = _attempt || 0;
     if (MOCK_MODE) return mockApi(action, payload);
     if (!state.idToken) throw new Error('AUTH_REQUIRED');
     // fetch() has no default timeout — on a hanging connection it can sit
@@ -1040,12 +1084,8 @@ const api = {
         signal: controller.signal,
       });
     } catch (fetchErr) {
-      // A slow/cold Apps Script response can legitimately take close to (or
-      // over) one timeout window — retrying once is safe here because these
-      // are read-only actions, so a second attempt can't create a duplicate.
-      const READ_ONLY_ACTIONS = ['bootstrap', 'list', 'categories', 'groups'];
-      if (READ_ONLY_ACTIONS.includes(action) && !_retried) {
-        return api.post(action, payload, true);
+      if (READ_ONLY_ACTIONS.includes(action) && attempt + 1 < MAX_READ_ATTEMPTS) {
+        return api.post(action, payload, attempt + 1);
       }
       if (fetchErr.name === 'AbortError' && !READ_ONLY_ACTIONS.includes(action)) {
         // A client-side abort at 12s says nothing about the server: Code.gs
@@ -1074,9 +1114,8 @@ const api = {
       // happens, so for a mutating action (add/update/delete/...) the write
       // may have already gone through; blindly resubmitting the same
       // payload would silently create a duplicate row instead of recovering.
-      const READ_ONLY_ACTIONS = ['bootstrap', 'list', 'categories', 'groups'];
       if (READ_ONLY_ACTIONS.includes(action)) {
-        if (!_retried) return api.post(action, payload, true);
+        if (attempt + 1 < MAX_READ_ATTEMPTS) return api.post(action, payload, attempt + 1);
         throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ลองใหม่อีกครั้ง');
       }
       throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ — รายการอาจถูกบันทึกไปแล้ว กรุณาตรวจสอบก่อนลองใหม่ (อย่ากดซ้ำ)');
@@ -1244,24 +1283,31 @@ function signOut(message) {
 }
 
 // ---------- Bootstrap ----------
-// api.post retries once internally for read-only actions like this one on
-// both a timeout and a parse failure — that's safe (nothing is written) and
-// covers a slow/cold Apps Script response, so we don't stack a second layer
-// of retries on top here. Worst case is bounded (two 12s attempts) and the
-// loading bar below keeps that wait from feeling like a frozen app. If it
-// still fails, the user has the refresh button to retry on demand.
+// api.post retries a couple of times internally for read-only actions like
+// this one (both on a timeout and on a parse failure) — that's safe
+// (nothing is written) and covers Apps Script's own flaky exec->echo
+// redirect relay, so we don't stack a second layer of retries on top here.
+// The loading bar below keeps the wait from feeling like a frozen app, and
+// the stale-data banner covers what happens if every retry still fails: a
+// toast alone disappears in a couple of seconds and is easy to miss,
+// especially right when the page just opened — leaving cached (stale) data
+// on screen with no visible sign anything went wrong.
 async function bootstrap() {
   const email = state.userProfile && state.userProfile.email;
+  let hadCache = false;
   if (email) {
     const cached = localStorage.getItem(cacheKeyFor(email));
     if (cached) {
       try {
         applyData(JSON.parse(cached));
+        hadCache = true;
       } catch (e) { /* ignore */ }
     }
   }
   const loadingBar = document.getElementById('loadingBar');
+  const staleBanner = document.getElementById('staleBanner');
   loadingBar.style.display = '';
+  staleBanner.style.display = 'none';
   try {
     const data = await api.post('bootstrap', {});
     if (email) localStorage.setItem(cacheKeyFor(email), JSON.stringify(data));
@@ -1280,6 +1326,7 @@ async function bootstrap() {
       signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message + ' — กดปุ่มรีเฟรชเพื่อลองใหม่');
+      if (hadCache) staleBanner.style.display = '';
     }
     return false;
   } finally {
@@ -2546,6 +2593,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   document.getElementById('refreshBtn').addEventListener('click', refreshData);
+  document.getElementById('staleBannerRetry').addEventListener('click', refreshData);
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
   document.getElementById('nc-add').addEventListener('click', addCategoryUI);
