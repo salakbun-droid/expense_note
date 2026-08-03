@@ -233,6 +233,7 @@ body {
 .chart-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .chart-header h3 { margin: 0; }
 .chart-header-toggles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.chart-header .icon-btn { margin-left: auto; } /* stays pinned to the right even if it wraps onto its own line */
 .range-toggle { display: flex; gap: 4px; flex-shrink: 0; }
 .range-toggle button {
   border: 1px solid var(--gridline);
@@ -250,6 +251,7 @@ body {
 .chart-canvas-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 .chart-canvas-wrap--lg { height: 380px; }
 .chart-canvas-wrap--trend { height: 266px; } /* ~70% of --lg (380px) */
+.chart-canvas-wrap--xl { height: 460px; }
 
 .stat-value { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .stat-value-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -369,8 +371,70 @@ body {
   justify-content: space-between;
   font-weight: 600;
   margin-bottom: 14px;
+  position: relative;
 }
 .month-label { font-size: 1.05rem; }
+
+.month-peek-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 6px 4px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.month-peek-btn:hover { opacity: 1; color: var(--text-secondary); }
+.month-picker--main { justify-content: center; gap: 10px; }
+.month-picker--main .month-label { font-size: 1.3rem; }
+.month-picker--main .month-peek-btn { font-size: 0.92rem; }
+.month-picker--main .icon-btn { font-size: 1.3rem; }
+.month-picker--main .icon-btn .material-symbols-outlined { font-size: 22px; }
+
+.js-month-calendar-trigger { cursor: pointer; border-radius: 6px; padding: 2px 6px; }
+.js-month-calendar-trigger:hover { background: var(--border); }
+
+.month-calendar-popover {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  min-width: 220px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  z-index: 15;
+}
+.month-calendar-popover.show { display: block; }
+.month-calendar-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.month-calendar-popover-header .icon-btn { padding: 4px 6px; }
+.month-calendar-popover-header .icon-btn .material-symbols-outlined { font-size: 18px; }
+.month-calendar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.month-calendar-grid button {
+  border: 1px solid transparent;
+  background: none;
+  border-radius: 6px;
+  padding: 8px 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.month-calendar-grid button:hover { background: var(--border); }
+.month-calendar-grid button.active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
 
 .group-bar {
   display: flex;
@@ -487,6 +551,8 @@ body {
   box-shadow: var(--shadow);
 }
 .modal h3 { margin: 0 0 16px; font-size: 1.05rem; text-transform: none; letter-spacing: normal; color: var(--text-primary); font-weight: 700; }
+.modal--wide { max-width: 760px; }
+.modal--wide .chart-header h3 { margin: 0; }
 .modal-actions { display: flex; gap: 8px; margin-top: 4px; }
 
 .cat-manage-list { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
@@ -580,10 +646,13 @@ input[type="color"] {
   <div class="dashboard-grid">
     <div class="col-main">
       <div class="card">
-        <div class="month-picker js-month-picker">
-          <button class="icon-btn js-prev-month">‹</button>
-          <span class="month-label js-month-label"></span>
-          <button class="icon-btn js-next-month">›</button>
+        <div class="month-picker month-picker--main js-month-picker">
+          <button class="icon-btn js-prev-year" title="ปีก่อนหน้า"><span class="material-symbols-outlined">keyboard_double_arrow_left</span></button>
+          <button class="month-peek-btn js-prev-month js-prev-month-label" title="เดือนก่อนหน้า"></button>
+          <span class="month-label js-month-label js-month-calendar-trigger" tabindex="0" role="button" title="เลือกเดือน"></span>
+          <button class="month-peek-btn js-next-month js-next-month-label" title="เดือนถัดไป"></button>
+          <button class="icon-btn js-next-year" title="ปีถัดไป"><span class="material-symbols-outlined">keyboard_double_arrow_right</span></button>
+          <div class="month-calendar-popover"></div>
         </div>
         <div class="stat-value-row">
           <div class="stat-value" id="statTotal">–</div>
@@ -609,11 +678,12 @@ input[type="color"] {
         <h3>Daily Spending Calendar</h3>
         <div class="month-picker js-month-picker">
           <button class="icon-btn js-prev-month">‹</button>
-          <span class="month-label js-month-label"></span>
+          <span class="month-label js-month-label js-month-calendar-trigger" tabindex="0" role="button" title="เลือกเดือน"></span>
           <button class="icon-btn js-next-month">›</button>
+          <div class="month-calendar-popover"></div>
         </div>
         <div class="calendar-weekdays">
-          <span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>
+          <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
         </div>
         <div id="dailyCalendar" class="calendar-grid"></div>
       </div>
@@ -633,6 +703,7 @@ input[type="color"] {
               <button data-range="ALL">All</button>
             </div>
           </div>
+          <button id="trendExpandBtn" class="icon-btn" title="ขยาย"><span class="material-symbols-outlined">open_in_full</span></button>
         </div>
         <div class="chart-canvas-wrap chart-canvas-wrap--trend"><canvas id="trendChart"></canvas></div>
       </div>
@@ -725,6 +796,29 @@ input[type="color"] {
   </div>
 </div>
 
+<!-- MONTHLY SPENDING TREND — EXPANDED VIEW -->
+<div id="trendExpandModal" class="modal-overlay">
+  <div class="modal modal--wide">
+    <div class="chart-header">
+      <h3>Monthly Spending Trend</h3>
+      <div class="chart-header-toggles">
+        <div class="range-toggle" id="trendExpandModeToggle">
+          <button data-mode="total" class="active">Total</button>
+          <button data-mode="group">Group</button>
+        </div>
+        <div class="range-toggle" id="trendExpandRangeToggle">
+          <button data-range="12" class="active">1Y</button>
+          <button data-range="24">2Y</button>
+          <button data-range="36">3Y</button>
+          <button data-range="ALL">All</button>
+        </div>
+        <button id="trendExpandClose" class="icon-btn" title="ปิด"><span class="material-symbols-outlined">close</span></button>
+      </div>
+    </div>
+    <div class="chart-canvas-wrap chart-canvas-wrap--xl"><canvas id="trendChartExpanded"></canvas></div>
+  </div>
+</div>
+
 <script>
 Chart.register(ChartDataLabels);
 
@@ -808,8 +902,8 @@ const state = {
   userProfile: null,  // {email, name, picture} decoded from idToken, for display only
 };
 
-const THAI_MONTHS_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-const THAI_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 // Curated Material Symbols (monotone, single-color icon font) choices for categories.
 const ICON_CHOICES = [
@@ -1014,8 +1108,24 @@ function decodeJwtPayload(token) {
 }
 
 function handleCredentialResponse(response) {
-  state.idToken = response.credential;
   const payload = decodeJwtPayload(response.credential);
+  const newEmail = payload && payload.email;
+  // If we're already actively signed in, ignore an automatic/silent
+  // credential event for a DIFFERENT account. On a shared device/browser,
+  // Google's own background session tracking (One Tap / FedCM) can fire
+  // this callback again if the browser's active Google account changes for
+  // reasons that have nothing to do with this tab — e.g. someone else signs
+  // into their own Google account on the same device — and without this
+  // guard that silently swapped out whoever was actively using the app,
+  // which read as a random forced logout. An intentional account switch
+  // still works fine: it goes through signOut() first, which clears
+  // state.idToken, so this check no longer applies.
+  if (state.idToken && state.userProfile && newEmail &&
+      newEmail.toLowerCase() !== state.userProfile.email.toLowerCase()) {
+    console.warn('Ignored an automatic sign-in credential for a different account while already signed in.');
+    return;
+  }
+  state.idToken = response.credential;
   state.userProfile = payload ? { email: payload.email, name: payload.name, picture: payload.picture } : null;
   // Reset in-memory data so nothing from a previous account (e.g. switching
   // accounts without an explicit sign-out) can render even for an instant.
@@ -1082,12 +1192,37 @@ async function bootstrap() {
     console.error(err);
     if (err.message === 'AUTH_FORBIDDEN') {
       signOut('บัญชีนี้ยังไม่ได้รับอนุญาตให้ใช้แอปนี้ — ติดต่อเจ้าของแอปให้เพิ่มอีเมลนี้ในชีต AllowedUsers');
+    } else if (err.message === 'AUTH_INVALID' || err.message === 'AUTH_REQUIRED') {
+      // The Google ID token is short-lived (~1 hour) — before forcing a
+      // full sign-in again, try a silent refresh (works as long as the
+      // browser still has an active Google session for this account).
+      trySilentReauth();
     } else if (String(err.message).indexOf('AUTH') === 0) {
       signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
   }
+}
+
+// Silently re-issue an ID token via GIS without showing the sign-in gate —
+// only falls back to a full forced sign-out if the browser genuinely has no
+// active Google session to refresh from (notification says so). Success is
+// reported through handleCredentialResponse, same as a normal sign-in — it
+// re-runs bootstrap() on its own once the new token lands.
+function trySilentReauth() {
+  if (!window.google || !google.accounts || !google.accounts.id) {
+    signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    return;
+  }
+  let settled = false;
+  google.accounts.id.prompt((notification) => {
+    if (settled) return;
+    if (notification.isNotDisplayed() || notification.isSkippedMoment() || notification.isDismissedMoment()) {
+      settled = true;
+      signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
+  });
 }
 
 function applyData(data) {
@@ -1208,8 +1343,81 @@ function shiftMonth(delta) {
   if (!state.monthCursor) return; // data hasn't loaded yet — nothing to shift
   state.monthCursor = shiftedMonth(state.monthCursor.y, state.monthCursor.m, delta);
   state.dayFilter = null; // switching months always falls back to the whole-month view
+  closeMonthCalendarPopover();
   renderStatRow();
   renderMonthSection();
+}
+
+// Jumps a whole year at a time (top-left card only — << / >> buttons).
+function shiftYear(delta) {
+  if (!state.monthCursor) return;
+  state.monthCursor = { y: state.monthCursor.y + delta, m: state.monthCursor.m };
+  state.dayFilter = null;
+  closeMonthCalendarPopover();
+  renderStatRow();
+  renderMonthSection();
+}
+
+// ---------- Month-calendar popover (click either month label to open) ----------
+// Both month-pickers (top-left card and Daily Spending Calendar) get their
+// own popover instance in the DOM, but share this same rendering/behavior —
+// clicking either label opens a 12-month grid for a browsable year, letting
+// you jump straight to any month instead of stepping one at a time.
+let openMonthCalendarPopover = null;
+let monthCalendarPopoverYear = null;
+
+function toggleMonthCalendarPopover(popover) {
+  if (openMonthCalendarPopover === popover) { closeMonthCalendarPopover(); return; }
+  closeMonthCalendarPopover();
+  monthCalendarPopoverYear = state.monthCursor.y;
+  openMonthCalendarPopover = popover;
+  renderMonthCalendarPopover(popover);
+  popover.classList.add('show');
+}
+
+function closeMonthCalendarPopover() {
+  if (openMonthCalendarPopover) openMonthCalendarPopover.classList.remove('show');
+  openMonthCalendarPopover = null;
+}
+
+function renderMonthCalendarPopover(popover) {
+  const y = monthCalendarPopoverYear;
+  const { y: currentY, m: currentM } = state.monthCursor;
+  popover.innerHTML = `
+    <div class="month-calendar-popover-header">
+      <button type="button" class="icon-btn" data-act="prev-year"><span class="material-symbols-outlined">chevron_left</span></button>
+      <span>${y}</span>
+      <button type="button" class="icon-btn" data-act="next-year"><span class="material-symbols-outlined">chevron_right</span></button>
+    </div>
+    <div class="month-calendar-grid">
+      ${MONTHS_SHORT.map((name, i) => `<button type="button" class="${y === currentY && i + 1 === currentM ? 'active' : ''}" data-month="${i + 1}">${name}</button>`).join('')}
+    </div>
+  `;
+  // stopPropagation everywhere in here: innerHTML gets rewritten on every
+  // year-nav click, which detaches the clicked button from the DOM — if
+  // this click were left to bubble, the document-level "close on outside
+  // click" listener would see e.target no longer .contains()-ed by the
+  // (rebuilt) popover and immediately close it right after opening.
+  popover.querySelector('[data-act="prev-year"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    monthCalendarPopoverYear--;
+    renderMonthCalendarPopover(popover);
+  });
+  popover.querySelector('[data-act="next-year"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    monthCalendarPopoverYear++;
+    renderMonthCalendarPopover(popover);
+  });
+  popover.querySelectorAll('.month-calendar-grid button').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.monthCursor = { y: monthCalendarPopoverYear, m: Number(btn.dataset.month) };
+      state.dayFilter = null;
+      closeMonthCalendarPopover();
+      renderStatRow();
+      renderMonthSection();
+    });
+  });
 }
 
 function renderCalendar(y, m, monthTx) {
@@ -1263,7 +1471,7 @@ function renderCalendar(y, m, monthTx) {
 }
 
 function calendarTooltipHtml(y, m, day, txList) {
-  const dateLabel = `${day} ${THAI_MONTHS_SHORT[m-1]} ${y}`;
+  const dateLabel = `${day} ${MONTHS_SHORT[m-1]} ${y}`;
   const total = txList.reduce((s, t) => s + t.amount, 0);
   const rows = [...txList]
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
@@ -1303,7 +1511,11 @@ function positionCalendarTooltip(cellRect) {
 
 function renderMonthSection() {
   const { y, m } = state.monthCursor;
-  document.querySelectorAll('.js-month-label').forEach(el => { el.textContent = `${THAI_MONTHS_FULL[m-1]} ${y}`; });
+  document.querySelectorAll('.js-month-label').forEach(el => { el.textContent = `${MONTHS_FULL[m-1]} ${y}`; });
+  const prevYm = shiftedMonth(y, m, -1);
+  const nextYm = shiftedMonth(y, m, 1);
+  document.querySelectorAll('.js-prev-month-label').forEach(el => { el.textContent = `‹ ${MONTHS_FULL[prevYm.m-1]}`; });
+  document.querySelectorAll('.js-next-month-label').forEach(el => { el.textContent = `${MONTHS_FULL[nextYm.m-1]} ›`; });
   const { tx: monthTx, total, byGroup } = monthStats(y, m);
 
   renderCalendar(y, m, monthTx);
@@ -1356,7 +1568,7 @@ function renderTxList(monthTx, y, m) {
     ? monthTx.filter(t => parseInt(t.date.slice(8, 10), 10) === state.dayFilter)
     : monthTx;
 
-  titleEl.textContent = isDayView ? `Transactions — ${state.dayFilter} ${THAI_MONTHS_SHORT[m-1]} ${y}` : 'Transactions This Month';
+  titleEl.textContent = isDayView ? `Transactions — ${state.dayFilter} ${MONTHS_SHORT[m-1]} ${y}` : 'Transactions This Month';
 
   const sorted = [...tx].sort((a,b) => (b.date + (b.createdAt||'')).localeCompare(a.date + (a.createdAt||'')));
   listEl.innerHTML = sorted.length ? sorted.map(txRowHtml).join('') : `<div class="empty-hint">ไม่มีรายการ${isDayView ? 'ในวันนี้' : 'ในเดือนนี้'}</div>`;
@@ -1463,11 +1675,14 @@ function renderOverview() {
   renderCategoryChart();
 }
 
-function renderTrendChart() {
-  const months = monthKeysForRange(state.trendRange);
+// Builds the {labels, datasets} + context shared by both the small inline
+// trend chart and its expanded popup — kept as one source of truth so the
+// two views can never quietly drift apart.
+function buildTrendChartData(mode, range) {
+  const months = monthKeysForRange(range);
   const theme = chartTheme();
-  const labels = months.map(mk => `${THAI_MONTHS_SHORT[mk.m-1]} ${mk.y}`);
-  const isGroup = state.trendMode === 'group';
+  const labels = months.map(mk => `${MONTHS_SHORT[mk.m-1]} ${mk.y}`);
+  const isGroup = mode === 'group';
 
   const monthKeySet = new Set(months.map(mk => mk.key));
   const rangeTx = state.transactions.filter(t => monthKeySet.has(monthKeyOf(t.date)));
@@ -1516,45 +1731,107 @@ function renderTrendChart() {
     }];
   }
 
+  return { months, labels, datasets, theme, isGroup };
+}
+
+// showLegend=true (the expanded popup, group mode only) also gets clicking
+// legend items for free — Chart.js's default legend onClick toggles that
+// dataset's visibility, which is exactly "filter by group" here since each
+// dataset already *is* one category/group's series.
+function trendChartOptions({ months, theme, isGroup, showLegend, enableMonthClick }) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    // Click-a-bar-to-jump-to-that-month is only for the small inline chart —
+    // the expanded popup is for exploring/filtering via the legend, not navigation.
+    onClick: enableMonthClick ? (evt, elements) => {
+      if (!elements.length) return;
+      const mk = months[elements[0].index];
+      state.monthCursor = { y: mk.y, m: mk.m };
+      renderStatRow();
+      renderMonthSection();
+      toast(`เปลี่ยนไปดูเดือน ${MONTHS_FULL[mk.m-1]} ${mk.y}`);
+    } : undefined,
+    onHover: enableMonthClick ? (evt, elements) => {
+      evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+    } : undefined,
+    plugins: {
+      legend: showLegend
+        ? {
+            display: true,
+            position: 'bottom',
+            labels: { color: theme.textMuted, boxWidth: 10, padding: 10 },
+            // "Solo" behavior instead of Chart.js's default plain toggle:
+            // click a group to show ONLY that one; click the same group
+            // again (now the only one visible) to bring everyone back.
+            onClick: (evt, legendItem, legend) => {
+              const chart = legend.chart;
+              const idx = legendItem.datasetIndex;
+              const onlyThisVisible = chart.data.datasets.every((_, i) => chart.isDatasetVisible(i) === (i === idx));
+              chart.data.datasets.forEach((_, i) => chart.setDatasetVisibility(i, onlyThisVisible ? true : i === idx));
+              chart.update();
+            },
+          }
+        : { display: false },
+      datalabels: { display: false },
+      tooltip: isGroup ? {
+        ...theme.tooltip,
+        callbacks: {
+          label: (c) => `${c.dataset.label}: ${fmtMoney(c.parsed.y)} บาท`,
+          footer: (items) => 'รวม: ' + fmtMoney(items.reduce((s, i) => s + i.parsed.y, 0)) + ' บาท',
+        },
+      } : {
+        ...theme.tooltip,
+        callbacks: { label: (c) => 'รวม: ' + fmtMoney(c.parsed.y) + ' บาท' },
+      },
+    },
+    scales: {
+      x: { stacked: isGroup, grid: { display: false }, ticks: { color: theme.textMuted, autoSkip: true, maxRotation: 0 } },
+      y: { stacked: isGroup, grid: { color: theme.gridline }, ticks: { color: theme.textMuted, callback: (v) => fmtMoney(v) } },
+    },
+  };
+}
+
+function renderTrendChart() {
+  const built = buildTrendChartData(state.trendMode, state.trendRange);
   const trendCtx = document.getElementById('trendChart');
   if (trendChartInstance) trendChartInstance.destroy();
   trendChartInstance = new Chart(trendCtx, {
     type: 'bar',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      onClick: (evt, elements) => {
-        if (!elements.length) return;
-        const mk = months[elements[0].index];
-        state.monthCursor = { y: mk.y, m: mk.m };
-        renderStatRow();
-        renderMonthSection();
-        toast(`เปลี่ยนไปดูเดือน ${THAI_MONTHS_FULL[mk.m-1]} ${mk.y}`);
-      },
-      onHover: (evt, elements) => {
-        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-      },
-      plugins: {
-        legend: { display: false },
-        datalabels: { display: false },
-        tooltip: isGroup ? {
-          ...theme.tooltip,
-          callbacks: {
-            label: (c) => `${c.dataset.label}: ${fmtMoney(c.parsed.y)} บาท`,
-            footer: (items) => 'รวม: ' + fmtMoney(items.reduce((s, i) => s + i.parsed.y, 0)) + ' บาท',
-          },
-        } : {
-          ...theme.tooltip,
-          callbacks: { label: (c) => 'รวม: ' + fmtMoney(c.parsed.y) + ' บาท' },
-        },
-      },
-      scales: {
-        x: { stacked: isGroup, grid: { display: false }, ticks: { color: theme.textMuted, autoSkip: true, maxRotation: 0 } },
-        y: { stacked: isGroup, grid: { color: theme.gridline }, ticks: { color: theme.textMuted, callback: (v) => fmtMoney(v) } },
-      },
-    },
+    data: { labels: built.labels, datasets: built.datasets },
+    options: trendChartOptions({ ...built, showLegend: false, enableMonthClick: true }),
+  });
+}
+
+// ---------- Monthly Spending Trend — expanded popup ----------
+let trendExpandChartInstance = null;
+const trendExpandState = { mode: 'total', range: 12 };
+
+function openTrendExpandModal() {
+  trendExpandState.mode = state.trendMode;
+  trendExpandState.range = state.trendRange;
+  document.querySelectorAll('#trendExpandModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === trendExpandState.mode));
+  document.querySelectorAll('#trendExpandRangeToggle button').forEach(b => {
+    const r = b.dataset.range === 'ALL' ? 'ALL' : Number(b.dataset.range);
+    b.classList.toggle('active', r === trendExpandState.range);
+  });
+  document.getElementById('trendExpandModal').classList.add('show');
+  renderExpandedTrendChart();
+}
+
+function closeTrendExpandModal() {
+  document.getElementById('trendExpandModal').classList.remove('show');
+}
+
+function renderExpandedTrendChart() {
+  const built = buildTrendChartData(trendExpandState.mode, trendExpandState.range);
+  const ctx = document.getElementById('trendChartExpanded');
+  if (trendExpandChartInstance) trendExpandChartInstance.destroy();
+  trendExpandChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: built.labels, datasets: built.datasets },
+    options: trendChartOptions({ ...built, showLegend: built.isGroup, enableMonthClick: false }),
   });
 }
 
@@ -2069,6 +2346,19 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('addBtn').addEventListener('click', openAddModal);
   document.querySelectorAll('.js-prev-month').forEach(btn => btn.addEventListener('click', () => shiftMonth(-1)));
   document.querySelectorAll('.js-next-month').forEach(btn => btn.addEventListener('click', () => shiftMonth(1)));
+  document.querySelectorAll('.js-prev-year').forEach(btn => btn.addEventListener('click', () => shiftYear(-1)));
+  document.querySelectorAll('.js-next-year').forEach(btn => btn.addEventListener('click', () => shiftYear(1)));
+  document.querySelectorAll('.js-month-calendar-trigger').forEach(label => {
+    label.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMonthCalendarPopover(label.closest('.month-picker').querySelector('.month-calendar-popover'));
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (openMonthCalendarPopover && !openMonthCalendarPopover.contains(e.target) && !e.target.classList.contains('js-month-calendar-trigger')) {
+      closeMonthCalendarPopover();
+    }
+  });
   document.getElementById('exportBtn').addEventListener('click', exportCsv);
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
@@ -2104,6 +2394,25 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       state.trendMode = btn.dataset.mode;
       renderTrendChart();
+    });
+  });
+  document.getElementById('trendExpandBtn').addEventListener('click', openTrendExpandModal);
+  document.getElementById('trendExpandClose').addEventListener('click', closeTrendExpandModal);
+  document.querySelectorAll('#trendExpandModeToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trendExpandModeToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      trendExpandState.mode = btn.dataset.mode;
+      renderExpandedTrendChart();
+    });
+  });
+  document.querySelectorAll('#trendExpandRangeToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trendExpandRangeToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const range = btn.dataset.range;
+      trendExpandState.range = range === 'ALL' ? 'ALL' : Number(range);
+      renderExpandedTrendChart();
     });
   });
   document.querySelectorAll('#rankRangeToggle button').forEach(btn => {
