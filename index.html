@@ -887,6 +887,20 @@ input[type="color"] {
   </div>
 </div>
 
+<div id="importModal" class="modal-overlay">
+  <div class="modal">
+    <h3>นำเข้าข้อมูลเก่าจาก Google Sheets</h3>
+    <p class="sign-in-message" style="margin-bottom:16px;">
+      กดปุ่มด้านล่างแล้วเลือกบัญชี Google <strong>เดียวกับที่เข้าสู่ระบบแอปอยู่ตอนนี้</strong>
+      (สำหรับดึงข้อมูลเก่าจากชีตเท่านั้น ไม่กระทบบัญชีที่ใช้งานอยู่)
+    </p>
+    <div id="importGsiButton" style="display:flex; justify-content:center; min-height:44px;"></div>
+    <div class="modal-actions">
+      <button id="import-close" class="ghost-btn">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
 <!-- MONTHLY SPENDING TREND — EXPANDED VIEW -->
 <div id="trendExpandModal" class="modal-overlay">
   <div class="modal modal--wide">
@@ -1471,26 +1485,66 @@ async function refreshData() {
 // Firestore. This is the only code left that still talks to Code.gs — safe
 // to delete entirely (this section + the importOldDataBtn button) once every
 // account that needs it has run it once.
+let importGsiInitialized = false;
+
+// google.accounts.id.prompt() (the silent "One Tap" flow) turned out to be
+// unreliable for actively opening a sign-in UI on demand — Google suppresses
+// it after a recent dismissal/sign-in on the same origin, or ITP blocks its
+// iframe outright, and either way it just silently no-ops with a "not
+// displayed/skipped" notification instead of doing anything visible (this
+// is exactly why the app's main sign-in button moved away from prompt() a
+// while back too). Render a real clickable Google button inside a small
+// modal instead — same reliable pattern as that main sign-in button.
 function importFromGoogleSheets() {
   if (!state.userProfile || !state.userProfile.uid) { toast('ต้องเข้าสู่ระบบก่อน'); return; }
   const already = state.transactions.length || state.categories.length;
-  const confirmMsg = already
-    ? 'มีข้อมูลอยู่ใน Firestore แล้ว (' + state.transactions.length + ' รายการ) นำเข้าซ้ำจะเพิ่มข้อมูลซ้ำกัน ต้องการดำเนินการต่อหรือไม่?'
-    : 'นำเข้าข้อมูลเดิมจาก Google Sheets มาไว้ใน Firestore หนึ่งครั้ง? จะมีการขอให้เข้าสู่ระบบ Google อีกครั้ง (สำหรับดึงข้อมูลเก่าเท่านั้น ไม่กระทบบัญชีที่ใช้อยู่ตอนนี้)';
-  if (!confirm(confirmMsg)) return;
+  if (already && !confirm('มีข้อมูลอยู่ใน Firestore แล้ว (' + state.transactions.length + ' รายการ) นำเข้าซ้ำจะเพิ่มข้อมูลซ้ำกัน ต้องการดำเนินการต่อหรือไม่?')) {
+    return;
+  }
   if (!window.google || !google.accounts || !google.accounts.id) {
     toast('ระบบเข้าสู่ระบบเดิมของ Google ยังโหลดไม่เสร็จ ลองใหม่อีกครั้งในอีกสักครู่');
     return;
   }
-  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: runImportFromGoogleSheets });
-  google.accounts.id.prompt((notification) => {
-    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-      toast('เปิดหน้าต่างเข้าสู่ระบบของ Google ไม่ได้ ลองปิดตัวบล็อกป๊อปอัปแล้วลองใหม่');
-    }
-  });
+  if (!importGsiInitialized) {
+    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: runImportFromGoogleSheets });
+    importGsiInitialized = true;
+  }
+  const el = document.getElementById('importGsiButton');
+  el.innerHTML = '';
+  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
+  document.getElementById('importModal').classList.add('show');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('show');
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(atob(base64).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+    return JSON.parse(json);
+  } catch (e) { return null; }
 }
 
 async function runImportFromGoogleSheets(response) {
+  // The GIS popup this triggers is a SEPARATE sign-in step from the Firebase
+  // session already active — nothing stops someone from picking a different
+  // Google account in it (e.g. the wrong saved account, or a spouse's, on a
+  // shared device). Without this check, that old Sheets data would land
+  // under the CURRENTLY signed-in Firebase account's Firestore path instead
+  // — one person's expenses silently mixed into another's. Since the old
+  // Sheets backend already scopes bootstrap by the token's own email
+  // (Code.gs's readTransactions/readCategories/readGroups filter by
+  // UserEmail), the two emails matching is what guarantees "my import only
+  // ever imports my own rows."
+  const credentialEmail = (decodeJwtPayload(response.credential) || {}).email;
+  const signedInEmail = state.userProfile && state.userProfile.email;
+  if (!credentialEmail || !signedInEmail || credentialEmail.toLowerCase() !== signedInEmail.toLowerCase()) {
+    toast('บัญชีที่เลือกไม่ตรงกับบัญชีที่เข้าสู่ระบบอยู่ (' + signedInEmail + ') กรุณาเลือกบัญชีเดียวกันตอนนำเข้าข้อมูล');
+    return;
+  }
+  closeImportModal();
   toast('กำลังนำเข้าข้อมูล...');
   try {
     const res = await fetch(WEB_APP_URL, {
@@ -2752,6 +2806,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   document.getElementById('refreshBtn').addEventListener('click', refreshData);
   document.getElementById('importOldDataBtn').addEventListener('click', importFromGoogleSheets);
+  document.getElementById('import-close').addEventListener('click', closeImportModal);
   document.getElementById('staleBannerRetry').addEventListener('click', refreshData);
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
