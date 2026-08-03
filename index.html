@@ -25,7 +25,17 @@ if (location.protocol === 'file:') {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<!-- Google Identity Services — kept only for the one-time "import old data
+     from Google Sheets" flow (see importFromGoogleSheets()). Day-to-day
+     sign-in now goes through Firebase Authentication below instead. -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- Firebase (compat build — namespaced firebase.* API, works with plain
+     script tags like the rest of this file, no bundler/ES modules needed).
+     Replaces Code.gs/Apps Script as the backend: Firestore for data,
+     Firebase Authentication for sign-in. -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" />
 <style>
 :root {
@@ -213,7 +223,23 @@ body {
 .sign-in-card h1 { font-size: 1.4rem; margin: 0 0 4px; }
 .sign-in-card .subtitle { margin: 0 0 20px; color: var(--text-secondary); font-size: 0.85rem; }
 .sign-in-message { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 20px; min-height: 1.2em; }
-.gsi-button-container { display: flex; justify-content: center; }
+.google-signin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--gridline);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.google-signin-btn:hover { background: var(--border); }
+.google-signin-btn svg { flex-shrink: 0; }
 
 .icon-btn {
   background: none;
@@ -669,7 +695,10 @@ input[type="color"] {
     <h1>Expense Tracker</h1>
     <p class="subtitle">Personal Finance Dashboard</p>
     <p class="sign-in-message" id="signInMessage"></p>
-    <div class="gsi-button-container" id="gsiButton"></div>
+    <button id="googleSignInBtn" class="google-signin-btn" type="button">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.59-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+      เข้าสู่ระบบด้วย Google
+    </button>
   </div>
 </div>
 
@@ -695,7 +724,8 @@ input[type="color"] {
       <button id="addBtn" class="pill-btn">+ เพิ่มรายการ</button>
       <button id="categoryBtn" class="icon-btn" title="จัดการหมวดหมู่">🏷️</button>
       <button id="themeToggleBtn" class="icon-btn" title="สลับโหมดสี"><span class="material-symbols-outlined" id="themeToggleIcon">dark_mode</span></button>
-      <button id="refreshBtn" class="icon-btn" title="ดึงข้อมูลใหม่จาก Google Sheets"><span class="material-symbols-outlined" id="refreshIcon">refresh</span></button>
+      <button id="refreshBtn" class="icon-btn" title="ดึงข้อมูลใหม่"><span class="material-symbols-outlined" id="refreshIcon">refresh</span></button>
+      <button id="importOldDataBtn" class="icon-btn" title="นำเข้าข้อมูลเก่าจาก Google Sheets (ครั้งเดียว) — ใช้ระหว่างย้ายระบบเท่านั้น"><span class="material-symbols-outlined">cloud_upload</span></button>
       <div class="user-info" id="userInfo" style="display:none;">
         <img class="user-avatar" id="userAvatar" alt="">
         <span class="user-name" id="userName"></span>
@@ -935,18 +965,43 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 // ---------- Config ----------
 // These are fixed for this deployment (not per-user secrets) — fill them in
 // once before hosting this file, so visitors never see or need to touch
-// them. Who can actually sign in and use the app is controlled separately,
-// via the AllowedUsers sheet in Code.gs — not by hiding these values.
+// them. Who can actually sign in and use the app is controlled separately —
+// see the Firestore Security Rules (allowedUsers collection), not by hiding
+// these values (Firebase config is meant to be public, same trust model as
+// the old WEB_APP_URL/GOOGLE_CLIENT_ID below).
+//
+// WEB_APP_URL / GOOGLE_CLIENT_ID are no longer used for normal sign-in or
+// data access — Firestore + Firebase Authentication (below) replaced Apps
+// Script as the backend. They're kept only so importFromGoogleSheets() can
+// still reach the old spreadsheet data for the one-time migration; once
+// that's done for every account that needs it, Code.gs/Apps Script and
+// these two constants can be retired entirely.
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDwhyTs_9yTrhu8S9pE8z5iMkyLkymz80ePHwScf9LyntWowtZHTurVmw1ZskLzPxRQQ/exec';
 const GOOGLE_CLIENT_ID = '379090037025-l0i3uhi4ble883dahu57q50hhgtj0csb.apps.googleusercontent.com';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDIV6RDb2W_8hVKq89eGuPCgsPZQjYWd6w",
+  authDomain: "cashflow-expense-tracker-6e765.firebaseapp.com",
+  projectId: "cashflow-expense-tracker-6e765",
+  storageBucket: "cashflow-expense-tracker-6e765.firebasestorage.app",
+  messagingSenderId: "294259646044",
+  appId: "1:294259646044:web:b4579b809851fa8b47d099",
+};
 
 const CACHE_KEY = 'expenseApp.cache';
 
 // Opening the file directly (double-click) can't do real Google Sign-In
-// anyway (GIS requires http/https), so fall back automatically to sample
-// data with no login — lets layout/CSS changes be checked instantly without
-// re-uploading to GitHub Pages each time.
+// anyway (Firebase Auth's popup flow requires http/https), so fall back
+// automatically to sample data with no login — lets layout/CSS changes be
+// checked instantly without re-uploading to GitHub Pages each time.
 const MOCK_MODE = location.protocol === 'file:';
+
+let auth, db;
+if (!MOCK_MODE) {
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+}
 
 // ---------- State ----------
 const state = {
@@ -959,8 +1014,7 @@ const state = {
   trendMode: 'total', // 'total' (single bar) or 'group' (stacked by category)
   rankRange: 3,      // months shown in the category breakdown chart (1/3/6/12)
   dayFilter: null,   // day number to scope the transaction list to, or null for the whole month
-  idToken: null,      // Google Identity Services ID token for the current session
-  userProfile: null,  // {email, name, picture} decoded from idToken, for display only
+  userProfile: null,  // {email, name, picture, uid} for the signed-in Firebase user, or null
 };
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1048,80 +1102,202 @@ function clearAllCaches() {
     .forEach(k => localStorage.removeItem(k));
 }
 
-// ---------- API ----------
-// All calls go through POST — an ID token is ~1000+ characters, and passing
-// it as a GET query param risks exceeding Apps Script's URL-length handling
-// (surfaces as a 404 from the redirect it does internally). Code.gs's doGet
-// still accepts the same actions for manual/curl testing.
-const READ_ONLY_ACTIONS = ['bootstrap', 'list', 'categories', 'groups'];
-// Apps Script Web Apps relay every response through an internal redirect
-// (script.google.com/exec -> script.googleusercontent.com/macros/echo) that
-// is, in practice, intermittently flaky on Google's own infrastructure —
-// observed hangs/404s on that hop with nothing wrong in our own code or
-// data. A few retries is safe for read-only actions (nothing gets written
-// twice) and meaningfully improves the odds one of them lands outside a bad
-// window; it's the only mitigation available for a failure mode outside our
-// control.
-const MAX_READ_ATTEMPTS = 3;
+// ---------- API (Firestore) ----------
+// Every user's data lives under /users/{uid}/{transactions,categories,groups}
+// — scoped by path rather than a UserEmail field, so Security Rules can gate
+// access with a single "request.auth.uid == uid" check instead of every
+// query needing to remember to filter. Whether that uid is allowed to use
+// the app at all is a separate check the rules do against the allowedUsers
+// collection (see DEPLOYMENT.md for the rules text) — Firestore itself is
+// the enforcement point now, there's no backend server in between anymore.
+function userCol(name) {
+  return db.collection('users').doc(state.userProfile.uid).collection(name);
+}
+
+function tsToIso(ts) {
+  // Firestore Timestamp -> ISO string, matching the string format the rest
+  // of this app already expects for createdAt (sorted via string compare in
+  // a couple of places, so it has to stay a real ISO-8601 string).
+  if (ts && typeof ts.toDate === 'function') return ts.toDate().toISOString();
+  if (ts instanceof Date) return ts.toISOString();
+  return ts || '';
+}
+
+function docToTransaction(doc) {
+  const d = doc.data();
+  return { id: doc.id, date: d.date, category: d.category, group: d.group, amount: Number(d.amount), note: d.note || '', createdAt: tsToIso(d.createdAt) };
+}
+function docToCategory(doc) {
+  const d = doc.data();
+  return { name: d.name, group: d.group, sortOrder: Number(d.sortOrder) || 0, icon: d.icon || '' };
+}
+function docToGroup(doc) {
+  const d = doc.data();
+  return { name: d.name, color: d.color || '#4a3aa7', sortOrder: Number(d.sortOrder) || 0 };
+}
+
+async function firestoreApi(action, payload) {
+  switch (action) {
+    case 'bootstrap': {
+      const [txSnap, catSnap, grpSnap] = await Promise.all([
+        userCol('transactions').get(), userCol('categories').get(), userCol('groups').get(),
+      ]);
+      return {
+        transactions: txSnap.docs.map(docToTransaction),
+        categories: catSnap.docs.map(docToCategory).sort((a, b) => a.sortOrder - b.sortOrder),
+        groups: grpSnap.docs.map(docToGroup).sort((a, b) => a.sortOrder - b.sortOrder),
+      };
+    }
+    case 'list': {
+      const snap = await userCol('transactions').get();
+      return snap.docs.map(docToTransaction);
+    }
+    case 'categories': {
+      const snap = await userCol('categories').get();
+      return snap.docs.map(docToCategory).sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+    case 'groups': {
+      const snap = await userCol('groups').get();
+      return snap.docs.map(docToGroup).sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+    case 'add': {
+      const ref = await userCol('transactions').add({
+        date: payload.date, category: payload.category, group: payload.group,
+        amount: Number(payload.amount), note: payload.note || '',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      // serverTimestamp() only resolves once it round-trips back from the
+      // server — the UI just needs *a* usable createdAt to sort by right
+      // away, so hand back the client clock's own value instead of paying
+      // for an extra read here.
+      return { id: ref.id, date: payload.date, category: payload.category, group: payload.group, amount: Number(payload.amount), note: payload.note || '', createdAt: new Date().toISOString() };
+    }
+    case 'update': {
+      if (!payload.id) throw new Error('Missing id');
+      await userCol('transactions').doc(payload.id).update({
+        date: payload.date, category: payload.category, group: payload.group,
+        amount: Number(payload.amount), note: payload.note || '',
+      });
+      return { id: payload.id, date: payload.date, category: payload.category, group: payload.group, amount: Number(payload.amount), note: payload.note || '' };
+    }
+    case 'delete': {
+      if (!payload.id) throw new Error('Missing id');
+      await userCol('transactions').doc(payload.id).delete();
+      return { id: payload.id };
+    }
+    case 'addCategory': {
+      if (!payload.name || !payload.group) throw new Error('Missing name/group');
+      const existing = (await userCol('categories').get()).docs.map(d => d.data().name);
+      if (existing.indexOf(payload.name) !== -1) throw new Error('มีหมวดหมู่นี้อยู่แล้ว: ' + payload.name);
+      const sortOrder = payload.sortOrder || (existing.length + 1);
+      const icon = payload.icon || 'sell';
+      await userCol('categories').add({ name: payload.name, group: payload.group, sortOrder, icon });
+      return { name: payload.name, group: payload.group, sortOrder, icon };
+    }
+    case 'updateCategory': {
+      if (!payload.oldName) throw new Error('Missing oldName');
+      if (!payload.name || !payload.group) throw new Error('Missing name/group');
+      const snap = await userCol('categories').where('name', '==', payload.oldName).limit(1).get();
+      if (snap.empty) throw new Error('ไม่พบหมวดหมู่: ' + payload.oldName);
+      const doc = snap.docs[0];
+      if (payload.name !== payload.oldName) {
+        const collision = await userCol('categories').where('name', '==', payload.name).limit(1).get();
+        if (!collision.empty) throw new Error('มีหมวดหมู่นี้อยู่แล้ว: ' + payload.name);
+      }
+      const icon = payload.icon || doc.data().icon || 'sell';
+      await doc.ref.update({ name: payload.name, group: payload.group, icon });
+      // Cascade the rename/regroup onto this user's own existing transactions.
+      if (payload.name !== payload.oldName || payload.group !== doc.data().group) {
+        const txSnap = await userCol('transactions').where('category', '==', payload.oldName).get();
+        if (!txSnap.empty) {
+          const batch = db.batch();
+          txSnap.docs.forEach(d => batch.update(d.ref, { category: payload.name, group: payload.group }));
+          await batch.commit();
+        }
+      }
+      return { name: payload.name, group: payload.group, icon };
+    }
+    case 'deleteCategory': {
+      if (!payload.name) throw new Error('Missing name');
+      const snap = await userCol('categories').where('name', '==', payload.name).limit(1).get();
+      if (snap.empty) throw new Error('ไม่พบหมวดหมู่: ' + payload.name);
+      await snap.docs[0].ref.delete();
+      return { name: payload.name };
+    }
+    case 'reorderCategories': {
+      if (!payload.order || !payload.order.length) throw new Error('Missing order');
+      const snap = await userCol('categories').get();
+      const batch = db.batch();
+      let changed = false;
+      snap.docs.forEach(d => {
+        const idx = payload.order.indexOf(d.data().name);
+        if (idx === -1) return;
+        const newSortOrder = idx + 1;
+        if (d.data().sortOrder !== newSortOrder) { batch.update(d.ref, { sortOrder: newSortOrder }); changed = true; }
+      });
+      if (changed) await batch.commit();
+      return { order: payload.order };
+    }
+    case 'addGroup': {
+      if (!payload.name) throw new Error('Missing name');
+      const existing = (await userCol('groups').get()).docs.map(d => d.data().name);
+      if (existing.indexOf(payload.name) !== -1) throw new Error('มีกลุ่มนี้อยู่แล้ว: ' + payload.name);
+      const sortOrder = payload.sortOrder || (existing.length + 1);
+      const color = payload.color || '#4a3aa7';
+      await userCol('groups').add({ name: payload.name, color, sortOrder });
+      return { name: payload.name, color, sortOrder };
+    }
+    case 'updateGroup': {
+      if (!payload.oldName) throw new Error('Missing oldName');
+      if (!payload.name) throw new Error('Missing name');
+      const snap = await userCol('groups').where('name', '==', payload.oldName).limit(1).get();
+      if (snap.empty) throw new Error('ไม่พบกลุ่ม: ' + payload.oldName);
+      const doc = snap.docs[0];
+      if (payload.name !== payload.oldName) {
+        const collision = await userCol('groups').where('name', '==', payload.name).limit(1).get();
+        if (!collision.empty) throw new Error('มีกลุ่มนี้อยู่แล้ว: ' + payload.name);
+      }
+      const color = payload.color || doc.data().color || '#4a3aa7';
+      await doc.ref.update({ name: payload.name, color });
+      if (payload.name !== payload.oldName) {
+        // Cascade the rename onto this user's own categories and transactions
+        // — group color lookups elsewhere are keyed off this name matching a
+        // real row, so nothing can be left pointing at the old one.
+        const catSnap = await userCol('categories').where('group', '==', payload.oldName).get();
+        const txSnap = await userCol('transactions').where('group', '==', payload.oldName).get();
+        if (!catSnap.empty || !txSnap.empty) {
+          const batch = db.batch();
+          catSnap.docs.forEach(d => batch.update(d.ref, { group: payload.name }));
+          txSnap.docs.forEach(d => batch.update(d.ref, { group: payload.name }));
+          await batch.commit();
+        }
+      }
+      return { name: payload.name, color };
+    }
+    case 'deleteGroup': {
+      if (!payload.name) throw new Error('Missing name');
+      const inUse = await userCol('categories').where('group', '==', payload.name).limit(1).get();
+      if (!inUse.empty) throw new Error('ยังมีหมวดหมู่ที่ใช้กลุ่มนี้อยู่ ย้ายหมวดหมู่เหล่านั้นไปกลุ่มอื่นก่อนแล้วค่อยลบ: ' + payload.name);
+      const snap = await userCol('groups').where('name', '==', payload.name).limit(1).get();
+      if (snap.empty) throw new Error('ไม่พบกลุ่ม: ' + payload.name);
+      await snap.docs[0].ref.delete();
+      return { name: payload.name };
+    }
+    default:
+      throw new Error('Unknown action: ' + action);
+  }
+}
 
 const api = {
-  async post(action, payload, _attempt) {
-    const attempt = _attempt || 0;
+  async post(action, payload) {
     if (MOCK_MODE) return mockApi(action, payload);
-    if (!state.idToken) throw new Error('AUTH_REQUIRED');
-    // fetch() has no default timeout — on a hanging connection it can sit
-    // for minutes with no feedback (this is what made the refresh spinner
-    // run "forever"). Bound each attempt so a stuck request fails fast
-    // instead of hanging indefinitely.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-    let res;
+    if (!state.userProfile || !state.userProfile.uid) throw new Error('AUTH_REQUIRED');
     try {
-      res = await fetch(WEB_APP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, payload, idToken: state.idToken }),
-        signal: controller.signal,
-      });
-    } catch (fetchErr) {
-      if (READ_ONLY_ACTIONS.includes(action) && attempt + 1 < MAX_READ_ATTEMPTS) {
-        return api.post(action, payload, attempt + 1);
-      }
-      if (fetchErr.name === 'AbortError' && !READ_ONLY_ACTIONS.includes(action)) {
-        // A client-side abort at 12s says nothing about the server: Code.gs
-        // already had the request (past the LockService queue) and may well
-        // finish the write after we stop waiting for its response. Use the
-        // same "may have been saved" wording as the parse-failure case below
-        // so the caller's verify-against-server recovery kicks in here too,
-        // instead of just reporting a plain timeout and leaving the add/
-        // edit/delete modal open on a write that actually went through.
-        throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ (หมดเวลา) — รายการอาจถูกบันทึกไปแล้ว กรุณาตรวจสอบก่อนลองใหม่ (อย่ากดซ้ำ)');
-      }
-      throw new Error(fetchErr.name === 'AbortError'
-        ? 'เชื่อมต่อ Apps Script ไม่สำเร็จ (หมดเวลา) ลองใหม่อีกครั้ง'
-        : 'เชื่อมต่ออินเทอร์เน็ตไม่ได้ ตรวจสอบสัญญาณแล้วลองใหม่');
-    } finally {
-      clearTimeout(timeoutId);
+      return await firestoreApi(action, payload);
+    } catch (err) {
+      if (err && err.code === 'permission-denied') throw new Error('AUTH_FORBIDDEN');
+      throw err;
     }
-    let json;
-    try {
-      json = await res.json();
-    } catch (parseErr) {
-      // Apps Script's internal redirect-to-echo hop occasionally 404s for no
-      // fault of ours (returns an HTML error page instead of JSON). Retrying
-      // is only safe for read-only actions — the doPost handler on the
-      // server runs to completion regardless of whether this parse failure
-      // happens, so for a mutating action (add/update/delete/...) the write
-      // may have already gone through; blindly resubmitting the same
-      // payload would silently create a duplicate row instead of recovering.
-      if (READ_ONLY_ACTIONS.includes(action)) {
-        if (attempt + 1 < MAX_READ_ATTEMPTS) return api.post(action, payload, attempt + 1);
-        throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ลองใหม่อีกครั้ง');
-      }
-      throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ — รายการอาจถูกบันทึกไปแล้ว กรุณาตรวจสอบก่อนลองใหม่ (อย่ากดซ้ำ)');
-    }
-    if (!json.ok) throw new Error(json.error || 'API error');
-    return json.data;
   },
 };
 
@@ -1135,32 +1311,33 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-// ---------- Google Sign-In ----------
-let gisInitialized = false;
-let gisPollAttempts = 0;
-
+// ---------- Sign-In (Firebase Authentication) ----------
 // Google actively refuses to complete OAuth sign-in inside embedded "in-app"
 // browsers (LINE, Facebook, Instagram, etc.) — tapping through on a mobile
 // device just hangs or dead-ends with no visible error, which is exactly
 // the "ค้าง" (freezes) symptom this app has been getting reports of. Catch
 // it up front and tell the user to open the link in their real browser
-// instead of letting them stare at a spinner that will never resolve.
+// instead of letting them stare at a popup that will never resolve.
 function isInAppBrowser() {
   const ua = navigator.userAgent || '';
   return /Line\//i.test(ua) || /FBAN|FBAV/i.test(ua) || /Instagram/i.test(ua) ||
     /MicroMessenger/i.test(ua) || /Twitter/i.test(ua) || /; ?wv\)/i.test(ua);
 }
 
+// Set by signOut() right before it asks Firebase to sign out, then consumed
+// (and cleared) by the onAuthStateChanged(null) branch below — that's the
+// one place that actually shows the sign-in gate on sign-out, so there's a
+// single source of truth instead of two competing calls racing each other.
+let pendingSignInMessage = null;
+
 function initApp() {
   if (MOCK_MODE) {
     document.getElementById('mockBanner').style.display = 'block';
-    state.userProfile = { email: 'preview@example.com', name: 'Preview Mode', picture: '' };
+    // The old-data import only makes sense against a real Firestore project.
+    document.getElementById('importOldDataBtn').style.display = 'none';
+    state.userProfile = { email: 'preview@example.com', name: 'Preview Mode', picture: '', uid: 'preview' };
     showApp();
     applyData(buildMockData());
-    return;
-  }
-  if (WEB_APP_URL.indexOf('PASTE_YOUR') === 0 || GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR') === 0) {
-    showSignInGate('ยังไม่ได้ตั้งค่า WEB_APP_URL / GOOGLE_CLIENT_ID ในไฟล์ index.html — แก้ค่าคงที่ด้านบนของ <script> ก่อนใช้งาน');
     return;
   }
   if (isInAppBrowser()) {
@@ -1168,80 +1345,31 @@ function initApp() {
     return;
   }
   showSignInGate('กำลังตรวจสอบการเข้าสู่ระบบ...');
-  initGoogleSignIn();
-}
-
-function initGoogleSignIn() {
-  if (!window.google || !google.accounts || !google.accounts.id) {
-    gisPollAttempts++;
-    if (gisPollAttempts > 30) { // ~9s of polling at 300ms
-      showSignInGate('โหลดระบบเข้าสู่ระบบของ Google ไม่สำเร็จ อาจเป็นเพราะอินเทอร์เน็ตช้าหรือมีการบล็อก accounts.google.com — ลองรีเฟรชหน้านี้ใหม่อีกครั้ง');
+  // Firebase keeps the session alive across reloads on its own (unlike the
+  // old GIS ID token, which lived only in memory and forced a fresh sign-in
+  // on every F5) — this fires once immediately with whatever session
+  // already exists, then again on every future sign-in/out.
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+      state.userProfile = null;
+      showSignInGate(pendingSignInMessage);
+      pendingSignInMessage = null;
       return;
     }
-    setTimeout(initGoogleSignIn, 300);
-    return;
-  }
-  if (!gisInitialized) {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse,
-      // Safari (and any other browser enforcing Intelligent Tracking
-      // Prevention) blocks the third-party cookie GIS's classic One Tap
-      // iframe relies on — without this flag that dead-ends as a raw
-      // "400. That's an error." page from accounts.google.com instead of
-      // failing gracefully. itp_support switches One Tap to an
-      // ITP-compatible flow. Dropped auto_select too: forcing an immediate
-      // credential response through that same blocked mechanism was
-      // needless extra risk for a minor convenience.
-      itp_support: true,
-    });
-    gisInitialized = true;
-  }
-  const el = document.getElementById('gsiButton');
-  el.innerHTML = '';
-  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
-  try {
-    // Silent one-tap sign-in if the browser already has a session — wrapped
-    // because a prompt() failure here must never block the actual sign-in
-    // button rendered just above from working.
-    google.accounts.id.prompt();
-  } catch (e) { /* the button above still works even if One Tap itself can't run */ }
+    state.userProfile = { email: user.email, name: user.displayName, picture: user.photoURL, uid: user.uid };
+    showApp();
+    await bootstrap();
+  });
 }
 
-function decodeJwtPayload(token) {
-  try {
-    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const json = decodeURIComponent(atob(base64).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
-    return JSON.parse(json);
-  } catch (e) { return null; }
-}
-
-function handleCredentialResponse(response) {
-  const payload = decodeJwtPayload(response.credential);
-  const newEmail = payload && payload.email;
-  // If we're already actively signed in, ignore an automatic/silent
-  // credential event for a DIFFERENT account. On a shared device/browser,
-  // Google's own background session tracking (One Tap / FedCM) can fire
-  // this callback again if the browser's active Google account changes for
-  // reasons that have nothing to do with this tab — e.g. someone else signs
-  // into their own Google account on the same device — and without this
-  // guard that silently swapped out whoever was actively using the app,
-  // which read as a random forced logout. An intentional account switch
-  // still works fine: it goes through signOut() first, which clears
-  // state.idToken, so this check no longer applies.
-  if (state.idToken && state.userProfile && newEmail &&
-      newEmail.toLowerCase() !== state.userProfile.email.toLowerCase()) {
-    console.warn('Ignored an automatic sign-in credential for a different account while already signed in.');
-    return;
-  }
-  state.idToken = response.credential;
-  state.userProfile = payload ? { email: payload.email, name: payload.name, picture: payload.picture } : null;
-  // Reset in-memory data so nothing from a previous account (e.g. switching
-  // accounts without an explicit sign-out) can render even for an instant.
-  state.transactions = [];
-  state.categories = [];
-  showApp();
-  bootstrap();
+function signInWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch((err) => {
+    // The user closing the popup themselves isn't an error worth surfacing.
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    console.error(err);
+    showSignInGate('เข้าสู่ระบบไม่สำเร็จ: ' + (err.message || err.code));
+  });
 }
 
 function showSignInGate(message) {
@@ -1267,28 +1395,18 @@ function renderUserInfo() {
 }
 
 function signOut(message) {
-  state.idToken = null;
-  state.userProfile = null;
-  state.transactions = [];
-  state.categories = [];
+  pendingSignInMessage = message || null;
   clearAllCaches();
-  if (window.google && google.accounts && google.accounts.id) {
-    // Prevents One Tap from silently re-selecting the same (possibly just-
-    // rejected) account on the next prompt() — the user has to explicitly
-    // click the sign-in button again, which avoids a forbidden-account loop.
-    google.accounts.id.disableAutoSelect();
-  }
-  showSignInGate(message);
-  initGoogleSignIn();
+  auth.signOut();
 }
 
 // ---------- Bootstrap ----------
-// api.post retries a couple of times internally for read-only actions like
-// this one (both on a timeout and on a parse failure) — that's safe
-// (nothing is written) and covers Apps Script's own flaky exec->echo
-// redirect relay, so we don't stack a second layer of retries on top here.
-// The loading bar below keeps the wait from feeling like a frozen app, and
-// the stale-data banner covers what happens if every retry still fails: a
+// Firestore's own SDK has no exec->echo redirect hop to be flaky about (that
+// was entirely an Apps Script Web App quirk) and handles its own retries
+// for transient network blips internally, so none of the manual
+// timeout/retry machinery the old Apps Script version needed is necessary
+// here. The loading bar keeps a normal wait from feeling like a frozen app,
+// and the stale-data banner covers the rare case a load still fails: a
 // toast alone disappears in a couple of seconds and is easy to miss,
 // especially right when the page just opened — leaving cached (stale) data
 // on screen with no visible sign anything went wrong.
@@ -1316,13 +1434,8 @@ async function bootstrap() {
   } catch (err) {
     console.error(err);
     if (err.message === 'AUTH_FORBIDDEN') {
-      signOut('บัญชีนี้ยังไม่ได้รับอนุญาตให้ใช้แอปนี้ — ติดต่อเจ้าของแอปให้เพิ่มอีเมลนี้ในชีต AllowedUsers');
-    } else if (err.message === 'AUTH_INVALID' || err.message === 'AUTH_REQUIRED') {
-      // The Google ID token is short-lived (~1 hour) — before forcing a
-      // full sign-in again, try a silent refresh (works as long as the
-      // browser still has an active Google session for this account).
-      trySilentReauth();
-    } else if (String(err.message).indexOf('AUTH') === 0) {
+      signOut('บัญชีนี้ยังไม่ได้รับอนุญาตให้ใช้แอปนี้ — ติดต่อเจ้าของแอปให้เพิ่มอีเมลนี้ในรายชื่อผู้ใช้ที่อนุญาต (Firestore: allowedUsers)');
+    } else if (err.message === 'AUTH_REQUIRED') {
       signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message + ' — กดปุ่มรีเฟรชเพื่อลองใหม่');
@@ -1334,9 +1447,7 @@ async function bootstrap() {
   }
 }
 
-// Manual "pull fresh data" — reuses the same in-memory idToken, so unlike
-// pressing F5 (which loses it, since it's never persisted to storage) this
-// doesn't force the user through sign-in again.
+// Manual "pull fresh data".
 async function refreshData() {
   const btn = document.getElementById('refreshBtn');
   const icon = document.getElementById('refreshIcon');
@@ -1354,24 +1465,70 @@ async function refreshData() {
   }
 }
 
-// Silently re-issue an ID token via GIS without showing the sign-in gate —
-// only falls back to a full forced sign-out if the browser genuinely has no
-// active Google session to refresh from (notification says so). Success is
-// reported through handleCredentialResponse, same as a normal sign-in — it
-// re-runs bootstrap() on its own once the new token lands.
-function trySilentReauth() {
+// ---------- One-time import from the old Google Sheets backend ----------
+// Temporary migration aid: pulls this account's existing data out of the old
+// Apps Script/Google Sheets backend one last time and copies it into
+// Firestore. This is the only code left that still talks to Code.gs — safe
+// to delete entirely (this section + the importOldDataBtn button) once every
+// account that needs it has run it once.
+function importFromGoogleSheets() {
+  if (!state.userProfile || !state.userProfile.uid) { toast('ต้องเข้าสู่ระบบก่อน'); return; }
+  const already = state.transactions.length || state.categories.length;
+  const confirmMsg = already
+    ? 'มีข้อมูลอยู่ใน Firestore แล้ว (' + state.transactions.length + ' รายการ) นำเข้าซ้ำจะเพิ่มข้อมูลซ้ำกัน ต้องการดำเนินการต่อหรือไม่?'
+    : 'นำเข้าข้อมูลเดิมจาก Google Sheets มาไว้ใน Firestore หนึ่งครั้ง? จะมีการขอให้เข้าสู่ระบบ Google อีกครั้ง (สำหรับดึงข้อมูลเก่าเท่านั้น ไม่กระทบบัญชีที่ใช้อยู่ตอนนี้)';
+  if (!confirm(confirmMsg)) return;
   if (!window.google || !google.accounts || !google.accounts.id) {
-    signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    toast('ระบบเข้าสู่ระบบเดิมของ Google ยังโหลดไม่เสร็จ ลองใหม่อีกครั้งในอีกสักครู่');
     return;
   }
-  let settled = false;
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: runImportFromGoogleSheets });
   google.accounts.id.prompt((notification) => {
-    if (settled) return;
-    if (notification.isNotDisplayed() || notification.isSkippedMoment() || notification.isDismissedMoment()) {
-      settled = true;
-      signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      toast('เปิดหน้าต่างเข้าสู่ระบบของ Google ไม่ได้ ลองปิดตัวบล็อกป๊อปอัปแล้วลองใหม่');
     }
   });
+}
+
+async function runImportFromGoogleSheets(response) {
+  toast('กำลังนำเข้าข้อมูล...');
+  try {
+    const res = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'bootstrap', payload: {}, idToken: response.credential }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Import failed');
+    const data = json.data;
+    const batch = db.batch();
+    let opCount = 0;
+    (data.groups || []).forEach(g => {
+      batch.set(userCol('groups').doc(), { name: g.name, color: g.color, sortOrder: g.sortOrder });
+      opCount++;
+    });
+    (data.categories || []).forEach(c => {
+      batch.set(userCol('categories').doc(), { name: c.name, group: c.group, sortOrder: c.sortOrder, icon: c.icon || '' });
+      opCount++;
+    });
+    (data.transactions || []).forEach(t => {
+      batch.set(userCol('transactions').doc(), {
+        date: t.date, category: t.category, group: t.group, amount: Number(t.amount), note: t.note || '',
+        // Preserve the original creation time from Sheets instead of resetting
+        // everything to "now" — keeps existing sort order intact after import.
+        createdAt: t.createdAt ? new Date(t.createdAt) : firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      opCount++;
+    });
+    if (opCount === 0) { toast('ไม่พบข้อมูลเก่าให้นำเข้า'); return; }
+    if (opCount > 500) throw new Error('ข้อมูลเยอะเกินไปสำหรับนำเข้าครั้งเดียว (' + opCount + ' รายการ, จำกัด 500) — แจ้งผู้พัฒนาให้แบ่งนำเข้าเป็นชุด');
+    await batch.commit();
+    toast('นำเข้าข้อมูลสำเร็จ! (' + opCount + ' รายการ) กำลังโหลดใหม่...');
+    await bootstrap();
+  } catch (err) {
+    console.error(err);
+    toast('นำเข้าข้อมูลไม่สำเร็จ: ' + err.message);
+  }
 }
 
 function applyData(data) {
@@ -2571,6 +2728,7 @@ function exportCsv() {
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-date').value = todayISO();
+  document.getElementById('googleSignInBtn').addEventListener('click', signInWithGoogle);
   document.getElementById('addForm').addEventListener('submit', handleFormSubmit);
   document.getElementById('f-cancel').addEventListener('click', closeTxModal);
   document.getElementById('addBtn').addEventListener('click', openAddModal);
@@ -2593,6 +2751,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('categoryBtn').addEventListener('click', openCategoryModal);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   document.getElementById('refreshBtn').addEventListener('click', refreshData);
+  document.getElementById('importOldDataBtn').addEventListener('click', importFromGoogleSheets);
   document.getElementById('staleBannerRetry').addEventListener('click', refreshData);
   updateThemeToggleIcon();
   document.getElementById('cat-close').addEventListener('click', closeCategoryModal);
