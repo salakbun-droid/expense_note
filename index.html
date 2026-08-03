@@ -1006,10 +1006,18 @@ const api = {
       json = await res.json();
     } catch (parseErr) {
       // Apps Script's internal redirect-to-echo hop occasionally 404s for no
-      // fault of ours (returns an HTML error page instead of JSON) — retry
-      // once before giving up, since it's normally a one-off hiccup.
-      if (!_retried) return api.post(action, payload, true);
-      throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ลองใหม่อีกครั้ง');
+      // fault of ours (returns an HTML error page instead of JSON). Retrying
+      // is only safe for read-only actions — the doPost handler on the
+      // server runs to completion regardless of whether this parse failure
+      // happens, so for a mutating action (add/update/delete/...) the write
+      // may have already gone through; blindly resubmitting the same
+      // payload would silently create a duplicate row instead of recovering.
+      const READ_ONLY_ACTIONS = ['bootstrap', 'list', 'categories', 'groups'];
+      if (READ_ONLY_ACTIONS.includes(action)) {
+        if (!_retried) return api.post(action, payload, true);
+        throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ลองใหม่อีกครั้ง');
+      }
+      throw new Error('เชื่อมต่อ Apps Script ไม่สำเร็จ — รายการอาจถูกบันทึกไปแล้ว กรุณาตรวจสอบก่อนลองใหม่ (อย่ากดซ้ำ)');
     }
     if (!json.ok) throw new Error(json.error || 'API error');
     return json.data;
@@ -2002,9 +2010,50 @@ async function handleFormSubmit(e) {
     closeTxModal();
     renderAll();
   } catch (err) {
+    // A response that failed to parse after adding (not editing) a
+    // transaction is genuinely ambiguous — Code.gs may have already
+    // appended the row before the connection dropped. Rather than leaving
+    // the user to guess (and often re-click, creating a real duplicate),
+    // re-fetch and look for the row we just tried to add before reporting
+    // failure.
+    if (!state.editingId && String(err.message).indexOf('รายการอาจถูกบันทึกไปแล้ว') !== -1) {
+      const recovered = await verifyAddSucceeded(payload);
+      if (recovered) {
+        state.transactions = recovered;
+        persistCache();
+        toast('บันทึกสำเร็จ (ระบบตอบกลับช้า)');
+        closeTxModal();
+        renderAll();
+        submitBtn.disabled = false;
+        return;
+      }
+    }
     toast('บันทึกไม่สำเร็จ: ' + err.message);
   } finally {
     submitBtn.disabled = false;
+  }
+}
+
+// Re-fetches the transaction list and checks for an entry matching what we
+// just tried to add, created within the last minute, that we don't already
+// have locally — a strong signal the add actually went through server-side
+// even though its own response never reached us in a usable form. Returns
+// the fresh transaction list if found, otherwise null.
+async function verifyAddSucceeded(payload) {
+  try {
+    const fresh = await api.post('list', {});
+    const now = Date.now();
+    const found = fresh.some(t =>
+      t.date === payload.date &&
+      t.category === payload.category &&
+      Number(t.amount) === Number(payload.amount) &&
+      (t.note || '') === (payload.note || '') &&
+      !state.transactions.some(existing => existing.id === t.id) &&
+      t.createdAt && (now - new Date(t.createdAt).getTime()) < 60000
+    );
+    return found ? fresh : null;
+  } catch (e) {
+    return null; // couldn't verify — fall through to the normal error message
   }
 }
 
