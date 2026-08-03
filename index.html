@@ -1182,9 +1182,10 @@ function signOut(message) {
 }
 
 // ---------- Bootstrap ----------
-async function bootstrap() {
+async function bootstrap(attempt) {
+  attempt = attempt || 1;
   const email = state.userProfile && state.userProfile.email;
-  if (email) {
+  if (attempt === 1 && email) {
     const cached = localStorage.getItem(cacheKeyFor(email));
     if (cached) {
       try {
@@ -1207,6 +1208,13 @@ async function bootstrap() {
       trySilentReauth();
     } else if (String(err.message).indexOf('AUTH') === 0) {
       signOut('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    } else if (attempt < 3) {
+      // The very first load is the worst moment to hit Apps Script's
+      // redirect-relay flakiness (see api.post) — it's usually the largest
+      // request of the session (transactions+categories+groups together)
+      // and often the one that wakes the script from a cold start. Retry a
+      // couple more times with a short pause before bothering the user.
+      setTimeout(() => bootstrap(attempt + 1), 1500);
     } else {
       toast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
