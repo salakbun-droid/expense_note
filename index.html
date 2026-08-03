@@ -1555,29 +1555,39 @@ async function runImportFromGoogleSheets(response) {
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Import failed');
     const data = json.data;
-    const batch = db.batch();
-    let opCount = 0;
+
+    // Firestore batched writes cap at 500 ops each — a personal tracker used
+    // daily for a year+ (plus recurring fixed items every month) can easily
+    // clear that, so queue every write as {ref, data} first and commit in
+    // chunks of 500 across as many batches as needed, instead of assuming
+    // one batch is enough.
+    const ops = [];
     (data.groups || []).forEach(g => {
-      batch.set(userCol('groups').doc(), { name: g.name, color: g.color, sortOrder: g.sortOrder });
-      opCount++;
+      ops.push([userCol('groups').doc(), { name: g.name, color: g.color, sortOrder: g.sortOrder }]);
     });
     (data.categories || []).forEach(c => {
-      batch.set(userCol('categories').doc(), { name: c.name, group: c.group, sortOrder: c.sortOrder, icon: c.icon || '' });
-      opCount++;
+      ops.push([userCol('categories').doc(), { name: c.name, group: c.group, sortOrder: c.sortOrder, icon: c.icon || '' }]);
     });
     (data.transactions || []).forEach(t => {
-      batch.set(userCol('transactions').doc(), {
+      ops.push([userCol('transactions').doc(), {
         date: t.date, category: t.category, group: t.group, amount: Number(t.amount), note: t.note || '',
         // Preserve the original creation time from Sheets instead of resetting
         // everything to "now" — keeps existing sort order intact after import.
         createdAt: t.createdAt ? new Date(t.createdAt) : firebase.firestore.FieldValue.serverTimestamp(),
-      });
-      opCount++;
+      }]);
     });
-    if (opCount === 0) { toast('ไม่พบข้อมูลเก่าให้นำเข้า'); return; }
-    if (opCount > 500) throw new Error('ข้อมูลเยอะเกินไปสำหรับนำเข้าครั้งเดียว (' + opCount + ' รายการ, จำกัด 500) — แจ้งผู้พัฒนาให้แบ่งนำเข้าเป็นชุด');
-    await batch.commit();
-    toast('นำเข้าข้อมูลสำเร็จ! (' + opCount + ' รายการ) กำลังโหลดใหม่...');
+    if (ops.length === 0) { toast('ไม่พบข้อมูลเก่าให้นำเข้า'); return; }
+
+    const CHUNK_SIZE = 500;
+    const totalChunks = Math.ceil(ops.length / CHUNK_SIZE);
+    for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+      const chunkNum = i / CHUNK_SIZE + 1;
+      toast('กำลังนำเข้าข้อมูล... (' + chunkNum + '/' + totalChunks + ')');
+      const batch = db.batch();
+      ops.slice(i, i + CHUNK_SIZE).forEach(([ref, docData]) => batch.set(ref, docData));
+      await batch.commit();
+    }
+    toast('นำเข้าข้อมูลสำเร็จ! (' + ops.length + ' รายการ) กำลังโหลดใหม่...');
     await bootstrap();
   } catch (err) {
     console.error(err);
