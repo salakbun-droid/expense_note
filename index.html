@@ -359,12 +359,21 @@ body {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  /* minmax(0, 1fr) instead of plain 1fr — grid items default to
+     min-width:auto, which resolves to their content's min-content size. If
+     anything inside a card (a long line of text, a chart canvas, a wide
+     transaction row) can't shrink below some width, the column normally
+     gets forced wider than the viewport to fit it — eating into the
+     right-side page padding while the left stays put, since the column's
+     left edge is anchored but the extra width only pushes the right edge
+     out. minmax(0, ...) caps the column at the container's actual width and
+     makes overflowing content wrap/scroll internally instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
 @media (min-width: 900px) {
-  .dashboard-grid { grid-template-columns: 1.2fr 0.8fr; }
+  .dashboard-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); }
 }
 
 .form-row { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
